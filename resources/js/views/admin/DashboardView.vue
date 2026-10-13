@@ -270,16 +270,19 @@ const summaryStats = computed(() => {
 });
 
 const getRoomImage = (room) => {
-  if (room && room.image) {
-    return room.image;
+  if (!room) return '/images/unsplash/standard-room.jpg';
+  if (room.image && room.image !== 'null' && room.image !== '') return room.image;
+  if (room.images && room.images.length > 0) {
+    const first = room.images.find(img => img.image_path && img.image_path !== 'null');
+    if (first) return first.image_path;
   }
   
   // High-quality fallback images based on type keywords
   const type = (room?.room_type || '').toLowerCase();
-  if (type.includes('suite')) {
+  if (type.includes('family') || type.includes('suite')) {
     return '/images/unsplash/suite-room.jpg';
   }
-  if (type.includes('deluxe')) {
+  if (type.includes('barkadahan') || type.includes('deluxe')) {
     return '/images/unsplash/deluxe-room.jpg';
   }
   return '/images/unsplash/standard-room.jpg';

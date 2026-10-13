@@ -21,7 +21,13 @@ class RoomSeeder extends Seeder
                 'price_per_head' => 0.00,
                 'min_occupancy' => 1,
                 'max_occupancy' => 2,
+                'bed_type' => 'Queen Bed',
+                'room_size' => '20',
                 'status' => 'available',
+                'image' => '/images/unsplash/standard-room.jpg',
+                'gallery' => [
+                    '/images/unsplash/room-interior.jpg',
+                ],
             ],
             [
                 'room_number' => '102',
@@ -31,7 +37,13 @@ class RoomSeeder extends Seeder
                 'price_per_head' => 0.00,
                 'min_occupancy' => 1,
                 'max_occupancy' => 2,
+                'bed_type' => 'Queen Bed',
+                'room_size' => '22',
                 'status' => 'available',
+                'image' => '/images/unsplash/standard-room.jpg',
+                'gallery' => [
+                    '/images/unsplash/room-interior.jpg',
+                ],
             ],
             [
                 'room_number' => '201',
@@ -41,7 +53,14 @@ class RoomSeeder extends Seeder
                 'price_per_head' => 500.00,
                 'min_occupancy' => 2,
                 'max_occupancy' => 4,
+                'bed_type' => 'King Bed',
+                'room_size' => '35',
                 'status' => 'available',
+                'image' => '/images/unsplash/suite-room.jpg',
+                'gallery' => [
+                    '/images/unsplash/suite-room.jpg',
+                    '/images/unsplash/room-interior.jpg',
+                ],
             ],
             [
                 'room_number' => '202',
@@ -51,12 +70,31 @@ class RoomSeeder extends Seeder
                 'price_per_head' => 350.00,
                 'min_occupancy' => 4,
                 'max_occupancy' => 6,
+                'bed_type' => 'Multiple Beds',
+                'room_size' => '40',
                 'status' => 'available',
+                'image' => '/images/unsplash/deluxe-room.jpg',
+                'gallery' => [
+                    '/images/unsplash/deluxe-room.jpg',
+                    '/images/unsplash/room-interior.jpg',
+                ],
             ],
         ];
 
-        foreach ($rooms as $room) {
-            Room::create($room);
+        foreach ($rooms as $roomData) {
+            $gallery = $roomData['gallery'] ?? [];
+            unset($roomData['gallery']);
+
+            $room = Room::updateOrCreate(
+                ['room_number' => $roomData['room_number']],
+                $roomData
+            );
+
+            foreach ($gallery as $imgPath) {
+                $room->images()->firstOrCreate([
+                    'image_path' => $imgPath,
+                ]);
+            }
         }
     }
 }

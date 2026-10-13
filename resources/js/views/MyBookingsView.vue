@@ -74,6 +74,7 @@
                         class="w-100 h-100 object-fit-cover position-absolute top-0 start-0" 
                         alt="Room Image"
                         loading="lazy"
+                        @error="onImageError($event, booking.room?.room_type)"
                       >
                    </div>
                 </div>
@@ -494,12 +495,25 @@ const getStatusBadgeClass = (status) => {
     }
 };
 
-const getRoomImage = (room) => {
-    if (room?.image) return room.image;
-    // Fallback logic matches other views
-    const type = (room?.room_type || '').toLowerCase();
-    if (type.includes('suite')) return '/images/unsplash/suite-room.jpg';
+const getDefaultImage = (type) => {
+    const t = (type || '').toLowerCase();
+    if (t.includes('family') || t.includes('suite')) return '/images/unsplash/suite-room.jpg';
+    if (t.includes('barkadahan') || t.includes('deluxe')) return '/images/unsplash/deluxe-room.jpg';
     return '/images/unsplash/standard-room.jpg';
+};
+
+const getRoomImage = (room) => {
+    if (!room) return '/images/unsplash/standard-room.jpg';
+    if (room.image && room.image !== 'null' && room.image !== '') return room.image;
+    if (room.images && room.images.length > 0) {
+        const first = room.images.find(img => img.image_path && img.image_path !== 'null');
+        if (first) return first.image_path;
+    }
+    return getDefaultImage(room.room_type);
+};
+
+const onImageError = (e, roomType) => {
+    e.target.src = getDefaultImage(roomType);
 };
 
 const isCancellable = (booking) => {

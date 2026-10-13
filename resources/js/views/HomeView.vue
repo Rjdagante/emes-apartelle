@@ -162,14 +162,25 @@ const handleCheckAvailability = async () => {
     }
 };
 
-const getRoomImage = (room) => {
-    if (room.image) return room.image;
-    
-    // Fallback images based on room type
-    const type = room.room_type.toLowerCase();
-    if (type.includes('suite')) return '/images/unsplash/suite-room.jpg';
-    if (type.includes('deluxe')) return '/images/unsplash/deluxe-room.jpg';
+const getDefaultImage = (type) => {
+    const t = (type || '').toLowerCase();
+    if (t.includes('family') || t.includes('suite')) return '/images/unsplash/suite-room.jpg';
+    if (t.includes('barkadahan') || t.includes('deluxe')) return '/images/unsplash/deluxe-room.jpg';
     return '/images/unsplash/standard-room.jpg';
+};
+
+const getRoomImage = (room) => {
+    if (!room) return '/images/unsplash/standard-room.jpg';
+    if (room.image && room.image !== 'null' && room.image !== '') return room.image;
+    if (room.images && room.images.length > 0) {
+        const first = room.images.find(img => img.image_path && img.image_path !== 'null');
+        if (first) return first.image_path;
+    }
+    return getDefaultImage(room.room_type);
+};
+
+const onImageError = (e, roomType) => {
+    e.target.src = getDefaultImage(roomType);
 };
 const formatIconClass = (icon) => {
   if (!icon) return '';
@@ -324,7 +335,7 @@ const formatIconClass = (icon) => {
           <div v-for="(room, index) in rooms" :key="room.id" class="col-lg-4 col-md-6 animate-fade-up" :style="{ animationDelay: index * 100 + 'ms' }">
             <div class="room-card card-hover shadow-gold-sm border-0 bg-white rounded-4 overflow-hidden d-flex flex-column h-100">
               <div class="room-card-image">
-                <img :src="getRoomImage(room)" :alt="room.room_type" loading="lazy">
+                <img :src="getRoomImage(room)" :alt="room.room_type" loading="lazy" @error="onImageError($event, room.room_type)">
                 <span class="room-badge" :class="room.status === 'available' ? 'bg-success text-white' : 'bg-danger text-white'">
                     {{ room.status === 'available' ? 'Available' : 'Occupied' }}
                 </span>
@@ -496,7 +507,7 @@ const formatIconClass = (icon) => {
                   <div class="room-horizontal-card bg-white rounded-4 shadow-sm overflow-hidden border-0 d-flex flex-column flex-md-row">
                     <!-- Image Area -->
                     <div class="room-card-image position-relative flex-shrink-0">
-                      <img :src="getRoomImage(room)" :alt="room.room_type" loading="lazy" class="w-100 h-100 object-fit-cover">
+                      <img :src="getRoomImage(room)" :alt="room.room_type" loading="lazy" class="w-100 h-100 object-fit-cover" @error="onImageError($event, room.room_type)">
                       <span class="room-badge bg-success text-white">
                           Available
                       </span>

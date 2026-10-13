@@ -72,7 +72,7 @@
                 <td class="ps-4 py-3">
                   <div class="d-flex align-items-center gap-3">
                     <div class="room-thumb rounded-3 overflow-hidden shadow-sm" style="width: 70px; height: 50px;">
-                      <img :src="room.image || getDefaultImage(room.room_type)" class="w-100 h-100 object-fit-cover">
+                      <img :src="getRoomDisplayImage(room)" @error="onImageError($event, room.room_type)" class="w-100 h-100 object-fit-cover">
                     </div>
                     <div>
                       <span class="fw-bold text-secondary-dark d-block">Room #{{ room.room_number }}</span>
@@ -181,7 +181,7 @@
 
           <!-- Main Form Content -->
           <div class="flex-grow-1 p-4 p-lg-5 overflow-y-auto bg-white custom-scrollbar">
-            <form id="roomPremiumForm" @submit.prevent="saveRoom">
+            <form id="roomPremiumForm" @submit.prevent="saveRoom" novalidate>
               
               <!-- TAB 1: BASIC INFORMATION -->
               <div v-show="activeTab === 'basic'" class="animate-tab-content">
@@ -327,7 +327,7 @@
                        <div class="gallery-upload-grid d-grid gap-3" style="grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));">
                           <!-- Existing Images -->
                           <div v-for="img in existingImages" :key="img.id" class="gallery-item-premium rounded-4 overflow-hidden border position-relative shadow-sm aspect-square">
-                             <img :src="img.image_path" class="w-100 h-100 object-fit-cover">
+                             <img :src="img.image_path" @error="onImageError($event, form.room_type)" class="w-100 h-100 object-fit-cover">
                              <button type="button" @click="removeExistingImage(img.id)" class="btn-remove-img shadow-sm position-absolute top-0 end-0 m-1">
                                 <i class="bi bi-x"></i>
                              </button>
@@ -396,7 +396,7 @@
                  <i class="bi bi-arrow-right"></i>
               </button>
               
-              <button v-else type="submit" form="roomPremiumForm" class="btn btn-gold px-5 py-2 rounded-pill shadow-gold d-flex align-items-center gap-2" :disabled="saving">
+              <button v-else type="button" @click="saveRoom" class="btn btn-gold px-5 py-2 rounded-pill shadow-gold d-flex align-items-center gap-2" :disabled="saving">
                  <span v-if="saving" class="spinner-border spinner-border-sm"></span>
                  <span class="fw-bold text-uppercase tracking-wider small">Save</span>
               </button>
@@ -425,7 +425,7 @@
           <div class="row g-4">
             <div class="col-md-5">
               <div class="rounded-4 overflow-hidden shadow-sm mb-4">
-                <img :src="selectedRoom.image || getDefaultImage(selectedRoom.room_type)" class="w-100 object-fit-cover" style="height: 250px;">
+                <img :src="getRoomDisplayImage(selectedRoom)" @error="onImageError($event, selectedRoom.room_type)" class="w-100 object-fit-cover" style="height: 250px;">
               </div>
               
               <!-- Additional Images in View Modal -->
@@ -433,7 +433,7 @@
                  <h6 class="x-small fw-bold text-uppercase text-muted mb-2 letter-spacing-wide">Gallery</h6>
                  <div class="d-flex gap-2 overflow-x-auto pb-2 custom-scrollbar">
                     <div v-for="img in selectedRoom.images" :key="img.id" class="rounded-3 overflow-hidden flex-shrink-0" style="width: 80px; height: 60px;">
-                       <img :src="img.image_path" class="w-100 h-100 object-fit-cover border">
+                       <img :src="img.image_path" @error="onImageError($event, selectedRoom.room_type)" class="w-100 h-100 object-fit-cover border">
                     </div>
                  </div>
               </div>
@@ -709,21 +709,34 @@ const removeMainImage = () => {
 };
 
 const saveRoom = async () => {
+  if (!form.room_number) {
+    activeTab.value = 'basic';
+    notify.warning('Validation', 'Room number is required.');
+    return;
+  }
   saving.value = true;
   try {
     const formData = new FormData();
     Object.keys(form).forEach(key => {
       if (key === 'amenities') {
-        formData.append(key, JSON.stringify(form[key]));
+        formData.append(key, JSON.stringify(form[key] || []));
       } else if (key === 'remove_images') {
-        formData.append(key, JSON.stringify(form[key]));
+        formData.append(key, JSON.stringify(form[key] || []));
       } else if (key === 'images') {
-        form[key].forEach((file) => {
-          formData.append('images[]', file);
-        });
-      } else if (key === 'image_file' && form[key]) {
-        formData.append(key, form[key]);
-      } else {
+        if (Array.isArray(form[key])) {
+          form[key].forEach((file) => {
+            formData.append('images[]', file);
+          });
+        }
+      } else if (key === 'image_file') {
+        if (form[key]) {
+          formData.append(key, form[key]);
+        }
+      } else if (key === 'image') {
+        if (form[key] !== null && form[key] !== undefined && form[key] !== 'null') {
+          formData.append(key, form[key]);
+        }
+      } else if (form[key] !== null && form[key] !== undefined) {
         formData.append(key, form[key]);
       }
     });
@@ -799,7 +812,22 @@ const getDefaultImage = (type) => {
         'Barkadahan': '/images/unsplash/deluxe-room.jpg',
         'Couple': '/images/unsplash/standard-room.jpg'
     };
-    return images[type.split(' ')[0]] || images['Couple'];
+    const prefix = (type || '').split(' ')[0];
+    return images[prefix] || images['Couple'];
+};
+
+const getRoomDisplayImage = (room) => {
+    if (!room) return '/images/unsplash/standard-room.jpg';
+    if (room.image && room.image !== 'null' && room.image !== '') return room.image;
+    if (room.images && room.images.length > 0) {
+        const first = room.images.find(img => img.image_path && img.image_path !== 'null');
+        if (first) return first.image_path;
+    }
+    return getDefaultImage(room.room_type);
+};
+
+const onImageError = (e, type) => {
+    e.target.src = getDefaultImage(type);
 };
 
 const isTabFilled = (tabId) => {

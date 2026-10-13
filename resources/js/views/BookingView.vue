@@ -178,15 +178,25 @@ const openRoomModal = () => {
     }
 };
 
-const getRoomImage = (room) => {
-    if (!room) return '';
-    if (room.image) return room.image;
-    
-    // Fallback based on type keywords
-    const type = room.room_type.toLowerCase();
-    if (type.includes('family')) return '/images/unsplash/suite-room.jpg';
-    if (type.includes('barkadahan')) return '/images/unsplash/deluxe-room.jpg';
+const getDefaultImage = (type) => {
+    const t = (type || '').toLowerCase();
+    if (t.includes('family')) return '/images/unsplash/suite-room.jpg';
+    if (t.includes('barkadahan')) return '/images/unsplash/deluxe-room.jpg';
     return '/images/unsplash/standard-room.jpg';
+};
+
+const getRoomImage = (room) => {
+    if (!room) return '/images/unsplash/standard-room.jpg';
+    if (room.image && room.image !== 'null' && room.image !== '') return room.image;
+    if (room.images && room.images.length > 0) {
+        const first = room.images.find(img => img.image_path && img.image_path !== 'null');
+        if (first) return first.image_path;
+    }
+    return getDefaultImage(room.room_type);
+};
+
+const onImageError = (e, roomType) => {
+    e.target.src = getDefaultImage(roomType);
 };
 
 const totalNights = computed(() => {
@@ -458,7 +468,7 @@ const formatToYMD = (date) => {
                                         <div class="row g-4 align-items-center">
                                             <div class="col-md-5">
                                                 <div class="position-relative overflow-hidden rounded-3 shadow-sm" style="height: 180px;">
-                                                    <img :src="getRoomImage(selectedRoom)" class="w-100 h-100 object-fit-cover animate-fade-in" :alt="selectedRoom.room_type">
+                                                    <img :src="getRoomImage(selectedRoom)" class="w-100 h-100 object-fit-cover animate-fade-in" :alt="selectedRoom.room_type" @error="onImageError($event, selectedRoom.room_type)">
                                                     <div class="position-absolute top-0 start-0 m-2">
                                                         <span class="badge bg-gold text-white px-3 py-2 rounded-pill shadow-sm">
                                                             Room #{{ selectedRoom.room_number }}
@@ -517,7 +527,7 @@ const formatToYMD = (date) => {
                                                 <div class="modal-body p-0" v-if="selectedRoom">
                                                     <div class="row g-0">
                                                         <div class="col-md-6 bg-light" style="min-height: 300px;">
-                                                            <img :src="getRoomImage(selectedRoom)" class="w-100 h-100 object-fit-cover" :alt="selectedRoom.room_type">
+                                                            <img :src="getRoomImage(selectedRoom)" class="w-100 h-100 object-fit-cover" :alt="selectedRoom.room_type" @error="onImageError($event, selectedRoom.room_type)">
                                                         </div>
                                                         <div class="col-md-6 p-4 p-lg-5 d-flex flex-column">
                                                             <span class="text-gold text-uppercase letter-spacing-wide small fw-bold mb-2">{{ selectedRoom.room_type }}</span>

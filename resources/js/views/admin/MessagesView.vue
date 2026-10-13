@@ -719,10 +719,15 @@ const openImageModal = (url) => {
 };
 
 const getRoomImage = (room) => {
-  if (room.image) return room.image;
-  const type = room.room_type.toLowerCase();
-  if (type.includes('suite')) return '/images/unsplash/suite-room.jpg';
-  if (type.includes('deluxe')) return '/images/unsplash/deluxe-room.jpg';
+  if (!room) return '/images/unsplash/standard-room.jpg';
+  if (room.image && room.image !== 'null' && room.image !== '') return room.image;
+  if (room.images && room.images.length > 0) {
+    const first = room.images.find(img => img.image_path && img.image_path !== 'null');
+    if (first) return first.image_path;
+  }
+  const type = (room.room_type || '').toLowerCase();
+  if (type.includes('family') || type.includes('suite')) return '/images/unsplash/suite-room.jpg';
+  if (type.includes('barkadahan') || type.includes('deluxe')) return '/images/unsplash/deluxe-room.jpg';
   return '/images/unsplash/standard-room.jpg';
 };
 

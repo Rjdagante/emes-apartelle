@@ -142,14 +142,25 @@ const getStatusBadge = (status) => {
   }
 };
 
-const getRoomImage = (room) => {
-  if (room.image) return room.image;
-  
-  // Fallback images based on room type
-  const type = room.room_type.toLowerCase();
-  if (type.includes('family')) return '/images/unsplash/suite-room.jpg';
-  if (type.includes('barkadahan')) return '/images/unsplash/deluxe-room.jpg';
+const getDefaultImage = (type) => {
+  const t = (type || '').toLowerCase();
+  if (t.includes('family')) return '/images/unsplash/suite-room.jpg';
+  if (t.includes('barkadahan')) return '/images/unsplash/deluxe-room.jpg';
   return '/images/unsplash/standard-room.jpg';
+};
+
+const getRoomImage = (room) => {
+  if (!room) return '/images/unsplash/standard-room.jpg';
+  if (room.image && room.image !== 'null' && room.image !== '') return room.image;
+  if (room.images && room.images.length > 0) {
+    const first = room.images.find(img => img.image_path && img.image_path !== 'null');
+    if (first) return first.image_path;
+  }
+  return getDefaultImage(room.room_type);
+};
+
+const onImageError = (e, roomType) => {
+  e.target.src = getDefaultImage(roomType);
 };
 
 const handleBooking = async () => {
@@ -431,7 +442,7 @@ onMounted(() => {
           <!-- Main Image and Gallery -->
           <div class="room-gallery-container mb-4">
             <div class="room-gallery rounded-5 overflow-hidden shadow-gold-lg position-relative mb-3">
-              <img :src="activeImage === -1 ? getRoomImage(room) : (room.images[activeImage]?.image_path || getRoomImage(room))" :alt="room.room_type" class="main-image w-100 h-100 object-fit-cover transition-all">
+              <img :src="activeImage === -1 ? getRoomImage(room) : (room.images[activeImage]?.image_path || getRoomImage(room))" :alt="room.room_type" class="main-image w-100 h-100 object-fit-cover transition-all" @error="onImageError($event, room.room_type)">
               
               <div class="gallery-overlay p-4 d-flex align-items-end">
                   <span class="status-badge px-4 py-2" :class="getStatusBadge(room.status).class">
@@ -448,7 +459,7 @@ onMounted(() => {
                     :class="activeImage === -1 ? 'border-gold shadow-gold-sm opacity-100' : 'border-light-subtle opacity-60 hover-opacity-100'"
                     style="width: 100px; height: 75px;"
                     @click="activeImage = -1">
-                  <img :src="getRoomImage(room)" class="w-100 h-100 object-fit-cover rounded-3">
+                  <img :src="getRoomImage(room)" class="w-100 h-100 object-fit-cover rounded-3" @error="onImageError($event, room.room_type)">
                </div>
 
                <div v-for="(img, idx) in room.images" :key="img.id" 
@@ -456,7 +467,7 @@ onMounted(() => {
                     :class="activeImage === idx ? 'border-gold shadow-gold-sm opacity-100' : 'border-light-subtle opacity-60 hover-opacity-100'"
                     style="width: 100px; height: 75px;"
                     @click="activeImage = idx">
-                  <img :src="img.image_path" class="w-100 h-100 object-fit-cover rounded-3">
+                  <img :src="img.image_path" class="w-100 h-100 object-fit-cover rounded-3" @error="onImageError($event, room.room_type)">
                </div>
             </div>
           </div>

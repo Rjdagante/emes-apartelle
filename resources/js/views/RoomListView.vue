@@ -52,14 +52,25 @@ const getStatusBadge = (status) => {
     }
 };
 
-const getRoomImage = (room) => {
-    if (room.image) return room.image;
-    
-    // Fallback based on type keywords
-    const type = room.room_type.toLowerCase();
-    if (type.includes('family')) return '/images/unsplash/suite-room.jpg';
-    if (type.includes('barkadahan')) return '/images/unsplash/deluxe-room.jpg';
+const getDefaultImage = (type) => {
+    const t = (type || '').toLowerCase();
+    if (t.includes('family')) return '/images/unsplash/suite-room.jpg';
+    if (t.includes('barkadahan')) return '/images/unsplash/deluxe-room.jpg';
     return '/images/unsplash/standard-room.jpg';
+};
+
+const getRoomImage = (room) => {
+    if (!room) return '/images/unsplash/standard-room.jpg';
+    if (room.image && room.image !== 'null' && room.image !== '') return room.image;
+    if (room.images && room.images.length > 0) {
+        const first = room.images.find(img => img.image_path && img.image_path !== 'null');
+        if (first) return first.image_path;
+    }
+    return getDefaultImage(room.room_type);
+};
+
+const onImageError = (e, roomType) => {
+    e.target.src = getDefaultImage(roomType);
 };
 
 onMounted(fetchRooms);
@@ -171,7 +182,7 @@ onMounted(fetchRooms);
           >
             <div class="room-card card-hover shadow-gold-sm border-0">
               <div class="room-card-image">
-                <img :src="getRoomImage(room)" :alt="room.room_type" loading="lazy">
+                <img :src="getRoomImage(room)" :alt="room.room_type" loading="lazy" @error="onImageError($event, room.room_type)">
                 <div class="room-overlay"></div>
                 <span class="room-badge" :class="getStatusBadge(room.status).class">
                   <i :class="getStatusBadge(room.status).icon" class="me-1"></i>

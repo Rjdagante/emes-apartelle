@@ -211,6 +211,8 @@ class RoomController extends Controller
         if ($request->hasFile('image_file')) {
             $path = $request->file('image_file')->store('rooms', 'public');
             $data['image'] = Storage::url($path);
+        } elseif (isset($data['image']) && ($data['image'] === 'null' || empty($data['image']))) {
+            $data['image'] = null;
         }
 
         $room = Room::create($data);
@@ -222,6 +224,24 @@ class RoomController extends Controller
                 $url = Storage::url($path);
                 $room->images()->create([
                     'image_path' => $url,
+                    'is_primary' => false,
+                ]);
+            }
+        }
+
+        // If no main image was provided, pick the first gallery image or fallback to preset
+        if (empty($room->image)) {
+            $firstGallery = $room->images()->first();
+            if ($firstGallery) {
+                $room->update(['image' => $firstGallery->image_path]);
+            } else {
+                $type = strtolower($room->room_type ?? '');
+                $defaultImg = str_contains($type, 'family')
+                    ? '/images/unsplash/suite-room.jpg'
+                    : (str_contains($type, 'barkadahan') ? '/images/unsplash/deluxe-room.jpg' : '/images/unsplash/standard-room.jpg');
+                $room->update(['image' => $defaultImg]);
+                $room->images()->create([
+                    'image_path' => '/images/unsplash/room-interior.jpg',
                     'is_primary' => false,
                 ]);
             }
@@ -310,6 +330,8 @@ class RoomController extends Controller
             
             $path = $request->file('image_file')->store('rooms', 'public');
             $data['image'] = Storage::url($path);
+        } elseif (isset($data['image']) && ($data['image'] === 'null' || empty($data['image']))) {
+            $data['image'] = null;
         }
 
         $room->update($data);
@@ -338,6 +360,20 @@ class RoomController extends Controller
                     }
                     $img->delete();
                 }
+            }
+        }
+
+        // Ensure room has a valid primary image
+        if (empty($room->fresh()->image)) {
+            $firstGallery = $room->images()->first();
+            if ($firstGallery) {
+                $room->update(['image' => $firstGallery->image_path]);
+            } else {
+                $type = strtolower($room->room_type ?? '');
+                $defaultImg = str_contains($type, 'family')
+                    ? '/images/unsplash/suite-room.jpg'
+                    : (str_contains($type, 'barkadahan') ? '/images/unsplash/deluxe-room.jpg' : '/images/unsplash/standard-room.jpg');
+                $room->update(['image' => $defaultImg]);
             }
         }
 
