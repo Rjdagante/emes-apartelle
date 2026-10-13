@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
 use Illuminate\Http\Request;
@@ -60,6 +61,9 @@ class SocialController extends Controller
             return redirect()->away($frontendUrl . "/login?token=" . $token);
 
         } catch (\Exception $e) {
+            Log::error('Google Social Auth Callback Exception: ' . $e->getMessage(), [
+                'exception' => $e
+            ]);
             return redirect()->away(config('app.url') . "/login?error=social_auth_failed");
         }
     }

@@ -112,19 +112,11 @@
                   <span class="divider-text">Or continue with</span>
                 </div>
 
-                <div class="row g-2 mb-4">
-                  <div class="col-6">
-                    <button @click="loginWithGoogle" type="button" class="btn-social w-100">
-                      <img src="/images/google-icon.ico" width="16" alt="Google"> 
-                      <span>Google</span>
-                    </button>
-                  </div>
-                  <div class="col-6">
-                    <button type="button" class="btn-social w-100">
-                      <i class="bi bi-apple fs-6"></i> 
-                      <span>Apple</span>
-                    </button>
-                  </div>
+                <div class="mb-4">
+                  <button @click="loginWithGoogle" type="button" class="btn-social w-100">
+                    <img src="/images/google-icon.ico" width="16" alt="Google"> 
+                    <span>Continue with Google</span>
+                  </button>
                 </div>
 
                 <p class="text-center small mb-0 footer-text">
