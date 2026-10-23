@@ -156,7 +156,7 @@
       </router-view>
     </main>
 
-    <ChatWidget v-if="state.user?.role !== 'admin'" />
+    <ChatWidget v-if="!isAdminRoute && !['admin', 'staff'].includes(state.user?.role)" />
 
     <!-- Footer -->
     <footer v-if="!isAdminRoute && !isAuthRoute" class="footer-section position-relative overflow-hidden">

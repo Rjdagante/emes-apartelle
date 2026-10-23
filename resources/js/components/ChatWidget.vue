@@ -1,5 +1,5 @@
 <template>
-  <div class="chat-widget position-fixed bottom-0 end-0 m-4 z-3 d-flex flex-column align-items-end">
+  <div v-if="isWidgetVisible" class="chat-widget position-fixed bottom-0 end-0 m-4 z-3 d-flex flex-column align-items-end">
     <!-- Chat Options Menu -->
     <transition name="slide-up">
       <div v-if="showOptions && !isOpen" class="chat-options-card card border-0 shadow-lg mb-3 overflow-hidden" style="width: 320px;">
@@ -257,10 +257,17 @@
 
 <script setup>
 import { ref, watch, nextTick, onMounted, onUnmounted, computed } from 'vue';
+import { useRoute } from 'vue-router';
 import axios from 'axios';
 import { useAuth } from '../store/auth';
 
+const route = useRoute();
 const { state } = useAuth();
+const isWidgetVisible = computed(() => {
+  if (route?.path?.startsWith('/admin')) return false;
+  if (['admin', 'staff'].includes(state.user?.role)) return false;
+  return true;
+});
 const isOpen = ref(false);
 const showOptions = ref(false);
 const chatMode = ref('support'); // 'support' or 'chatbot'
