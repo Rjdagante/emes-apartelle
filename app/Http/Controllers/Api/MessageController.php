@@ -17,27 +17,23 @@ class MessageController extends Controller
         $user = Auth::user();
         $type = $request->query('type', 'support');
 
-        // If admin, we use a different endpoint to get conversations
-        if ($user->role === 'admin') {
+        // If admin or staff, use support/admin conversation list
+        if (in_array($user->role, ['admin', 'staff'])) {
             return $this->getAdminConversations($request);
         }
 
-        // Guest: get conversation with Admin
-        $admin = User::where('role', 'admin')->first();
-        if (!$admin) {
-             return response()->json([], 200);
-        }
-
+        // Guest: get conversation with Support (Admin / Staff)
+        $supportUserIds = User::whereIn('role', ['admin', 'staff'])->pluck('id');
         $isChatbot = ($type === 'chatbot');
 
-        // FIXED: Proper SQL grouping to avoid OR/AND precedence issues
+        // Proper SQL grouping to retrieve messages exchanged with support team
         $messages = Message::where('is_chatbot', $isChatbot)
-            ->where(function($q) use ($user, $admin) {
-                $q->where(function($inner) use ($user, $admin) {
+            ->where(function($q) use ($user, $supportUserIds) {
+                $q->where(function($inner) use ($user, $supportUserIds) {
                     $inner->where('sender_id', $user->id)
-                          ->where('receiver_id', $admin->id);
-                })->orWhere(function($inner) use ($user, $admin) {
-                    $inner->where('sender_id', $admin->id)
+                          ->whereIn('receiver_id', $supportUserIds);
+                })->orWhere(function($inner) use ($user, $supportUserIds) {
+                    $inner->whereIn('sender_id', $supportUserIds)
                           ->where('receiver_id', $user->id);
                 });
             })
@@ -47,49 +43,52 @@ class MessageController extends Controller
         return response()->json($messages);
     }
 
-    // Admin: Get list of recent conversations
+    // Admin & Staff: Get list of recent conversations
     private function getAdminConversations(Request $request)
     {
-        $adminId = Auth::id();
-        $type = $request->query('type', 'support');
+        $user = Auth::user();
+        $type = ($user && $user->role === 'staff') ? 'support' : $request->query('type', 'support');
+        $supportUserIds = User::whereIn('role', ['admin', 'staff'])->pluck('id');
 
         if ($type === 'suspended') {
-            $users = User::where('role', '!=', 'admin')
+            $users = User::whereNotIn('role', ['admin', 'staff'])
                 ->where('is_suspended', true)
                 ->get();
             $userIds = $users->pluck('id');
-            $isChatbot = false; // Default for suspended view or handle both? Support is safer.
+            $isChatbot = false;
         } else {
             $isChatbot = ($type === 'chatbot');
 
-            // Get IDs of users who have sent/received messages to/from admin (filtered by type)
+            // Get IDs of guests who have sent/received messages to/from support team (filtered by type)
             $userIds = Message::where('is_chatbot', $isChatbot)
-                ->where(function($q) use ($adminId) {
-                    $q->where('sender_id', $adminId)
-                      ->orWhere('receiver_id', $adminId);
+                ->where(function($q) use ($supportUserIds) {
+                    $q->whereIn('sender_id', $supportUserIds)
+                      ->orWhereIn('receiver_id', $supportUserIds);
                 })
                 ->get()
-                ->map(function($msg) use ($adminId) {
-                    return $msg->sender_id === $adminId ? $msg->receiver_id : $msg->sender_id;
+                ->map(function($msg) use ($supportUserIds) {
+                    return $supportUserIds->contains($msg->sender_id) ? $msg->receiver_id : $msg->sender_id;
+                })
+                ->filter(function($id) use ($supportUserIds) {
+                    return !$supportUserIds->contains($id);
                 })
                 ->unique();
         }
 
-        $users = User::whereIn('id', $userIds)->get()->map(function($user) use ($adminId, $isChatbot) {
-             // FIXED: Proper grouping for lastMessage query
+        $users = User::whereIn('id', $userIds)->get()->map(function($user) use ($supportUserIds, $isChatbot) {
              $lastMessage = Message::where('is_chatbot', $isChatbot)
-                ->where(function($q) use ($user, $adminId) {
-                    $q->where(function($inner) use ($user, $adminId) {
-                        $inner->where('sender_id', $user->id)->where('receiver_id', $adminId);
-                    })->orWhere(function($inner) use ($user, $adminId) {
-                        $inner->where('sender_id', $adminId)->where('receiver_id', $user->id);
+                ->where(function($q) use ($user, $supportUserIds) {
+                    $q->where(function($inner) use ($user, $supportUserIds) {
+                        $inner->where('sender_id', $user->id)->whereIn('receiver_id', $supportUserIds);
+                    })->orWhere(function($inner) use ($user, $supportUserIds) {
+                        $inner->whereIn('sender_id', $supportUserIds)->where('receiver_id', $user->id);
                     });
                 })
                 ->orderBy('created_at', 'desc')
                 ->first();
 
              $unreadCount = Message::where('sender_id', $user->id)
-                ->where('receiver_id', $adminId)
+                ->whereIn('receiver_id', $supportUserIds)
                 ->where('is_read', false)
                 ->where('is_chatbot', $isChatbot)
                 ->count();
@@ -104,32 +103,33 @@ class MessageController extends Controller
         return response()->json($users);
     }
 
-    // Admin: Get messages with specific user
+    // Admin & Staff: Get messages with specific user
     public function show(Request $request, $userId)
     {
-        $adminId = Auth::id();
-        $type = $request->query('type', 'support');
+        $user = Auth::user();
+        $type = ($user && $user->role === 'staff') ? 'support' : $request->query('type', 'support');
         $isChatbot = ($type === 'chatbot');
 
-        if (Auth::user()->role !== 'admin') {
+        if (!in_array(Auth::user()->role, ['admin', 'staff'])) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        // FIXED: Proper SQL grouping
+        $supportUserIds = User::whereIn('role', ['admin', 'staff'])->pluck('id');
+
         $messages = Message::where('is_chatbot', $isChatbot)
-            ->where(function($q) use ($userId, $adminId) {
-                $q->where(function($inner) use ($userId, $adminId) {
-                    $inner->where('sender_id', $adminId)->where('receiver_id', $userId);
-                })->orWhere(function($inner) use ($userId, $adminId) {
-                    $inner->where('sender_id', $userId)->where('receiver_id', $adminId);
+            ->where(function($q) use ($userId, $supportUserIds) {
+                $q->where(function($inner) use ($userId, $supportUserIds) {
+                    $inner->whereIn('sender_id', $supportUserIds)->where('receiver_id', $userId);
+                })->orWhere(function($inner) use ($userId, $supportUserIds) {
+                    $inner->where('sender_id', $userId)->whereIn('receiver_id', $supportUserIds);
                 });
             })
             ->orderBy('created_at', 'asc')
             ->get();
 
-        // Mark as read
+        // Mark incoming messages from guest as read for the support team
         Message::where('sender_id', $userId)
-            ->where('receiver_id', $adminId)
+            ->whereIn('receiver_id', $supportUserIds)
             ->where('is_read', false)
             ->where('is_chatbot', $isChatbot)
             ->update(['is_read' => true]);
@@ -150,10 +150,10 @@ class MessageController extends Controller
         $receiverId = $request->receiver_id;
 
         if ($sender->role === 'guest' || $sender->role === 'client') {
-             $admin = User::where('role', 'admin')->first();
-             if (!$admin) return response()->json(['message' => 'No admin available'], 500);
-             $receiverId = $admin->id;
-        } else if ($sender->role === 'admin') {
+             $supportTarget = User::where('role', 'admin')->first() ?: User::where('role', 'staff')->first();
+             if (!$supportTarget) return response()->json(['message' => 'No support recipient available'], 500);
+             $receiverId = $supportTarget->id;
+        } else if (in_array($sender->role, ['admin', 'staff'])) {
              if (!$receiverId) return response()->json(['message' => 'Receiver required'], 422);
         }
 
@@ -174,27 +174,27 @@ class MessageController extends Controller
             'is_chatbot' => $isChatbot
         ]);
 
-        // Chatbot logic: Only trigger if coming from chatbot interface
-        if ($sender->role !== 'admin' && $request->message && $isChatbot) {
+        // Chatbot logic: Only trigger if coming from chatbot interface and sender is a guest
+        if (!in_array($sender->role, ['admin', 'staff']) && $request->message && $isChatbot) {
             $this->handleChatbot($sender->id, $request->message, $isChatbot);
         }
 
-        // Notify receiver if it's a guest being messaged by admin
-        if ($sender->role === 'admin') {
+        // Notify receiver if it's a guest being messaged by support (admin or staff)
+        if (in_array($sender->role, ['admin', 'staff'])) {
             $receiver = User::find($receiverId);
-            if ($receiver && $receiver->role !== 'admin') {
+            if ($receiver && !in_array($receiver->role, ['admin', 'staff'])) {
                 $snippet = $request->message ?? 'Sent an image attachment';
                 if (strlen($snippet) > 100) $snippet = substr($snippet, 0, 97) . '...';
                 $receiver->notify(new \App\Notifications\NewMessageReceived($sender->name, $snippet));
             }
         } 
-        // Notify Admin if it's a Guest sending a Support message
+        // Notify Support (both Admin and Staff) if it's a Guest sending a Support message
         else if (!$isChatbot) {
-            $admin = User::where('role', 'admin')->first();
-            if ($admin) {
-                $snippet = $request->message ?? 'Sent an image attachment';
-                 if (strlen($snippet) > 100) $snippet = substr($snippet, 0, 97) . '...';
-                $admin->notify(new \App\Notifications\NewMessageReceived($sender->name, $snippet));
+            $supportTeam = User::whereIn('role', ['admin', 'staff'])->get();
+            $snippet = $request->message ?? 'Sent an image attachment';
+            if (strlen($snippet) > 100) $snippet = substr($snippet, 0, 97) . '...';
+            foreach ($supportTeam as $member) {
+                $member->notify(new \App\Notifications\NewMessageReceived($sender->name, $snippet));
             }
         }
 
@@ -206,8 +206,8 @@ class MessageController extends Controller
         // Strictly only respond if the message came from the chatbot interface
         if (!$isChatbotSource) return;
 
-        $admin = User::where('role', 'admin')->first();
-        if (!$admin) return;
+        $supportUser = User::where('role', 'admin')->first() ?: User::where('role', 'staff')->first();
+        if (!$supportUser) return;
 
         $rules = ChatbotResponse::where('is_active', true)->get();
 
@@ -244,7 +244,7 @@ class MessageController extends Controller
                     : null;
 
                 Message::create([
-                    'sender_id' => $admin->id,
+                    'sender_id' => $supportUser->id,
                     'receiver_id' => $guestId,
                     'message' => $rule->response,
                     'quick_replies' => $quickReplies,
@@ -261,7 +261,7 @@ class MessageController extends Controller
         $firstName = $guest ? explode(' ', $guest->name)[0] : 'there';
 
         Message::create([
-            'sender_id' => $admin->id,
+            'sender_id' => $supportUser->id,
             'receiver_id' => $guestId,
             'message' => "Hi {$firstName}! I didn't quite catch that. Could you try asking about our **WiFi**, **Price**, or **Location**? You can also switch to **Live Chat** to speak with our staff.",
             'is_read' => false,
@@ -270,36 +270,86 @@ class MessageController extends Controller
     }
 
     public function markAsRead(Request $request, $senderId) {
-        $userId = Auth::id();
+        $user = Auth::user();
         $type = $request->query('type', 'support');
 
-        Message::where('sender_id', $senderId)
-               ->where('receiver_id', $userId)
-               ->where('is_chatbot', $type === 'chatbot')
-               ->update(['is_read' => true]);
+        if (in_array($user->role, ['admin', 'staff'])) {
+            $supportUserIds = User::whereIn('role', ['admin', 'staff'])->pluck('id');
+            Message::where('sender_id', $senderId)
+                   ->whereIn('receiver_id', $supportUserIds)
+                   ->where('is_chatbot', $type === 'chatbot')
+                   ->update(['is_read' => true]);
+        } else {
+            Message::where('sender_id', $senderId)
+                   ->where('receiver_id', $user->id)
+                   ->where('is_chatbot', $type === 'chatbot')
+                   ->update(['is_read' => true]);
+        }
         
         return response()->json(['message' => 'Marked as read']);
     }
 
     public function getUnreadCount(Request $request)
     {
-        $userId = Auth::id();
+        $user = Auth::user();
         $type = $request->query('type');
+        $isSupportRole = in_array($user->role, ['admin', 'staff']);
+        $supportUserIds = $isSupportRole ? User::whereIn('role', ['admin', 'staff'])->pluck('id') : collect([$user->id]);
+
+        if ($isSupportRole) {
+            if ($user->role === 'staff') {
+                $supportCount = Message::whereIn('receiver_id', $supportUserIds)
+                                ->where('is_read', false)
+                                ->where('is_chatbot', false)
+                                ->count();
+                return response()->json([
+                    'support' => $supportCount,
+                    'chatbot' => 0,
+                    'total' => $supportCount,
+                    'count' => $supportCount
+                ]);
+            }
+
+            if ($type) {
+                $count = Message::whereIn('receiver_id', $supportUserIds)
+                                ->where('is_read', false)
+                                ->where('is_chatbot', $type === 'chatbot')
+                                ->count();
+                return response()->json(['count' => $count]);
+            }
+
+            $supportCount = Message::whereIn('receiver_id', $supportUserIds)
+                            ->where('is_read', false)
+                            ->where('is_chatbot', false)
+                            ->count();
+
+            $chatbotCount = Message::whereIn('receiver_id', $supportUserIds)
+                            ->where('is_read', false)
+                            ->where('is_chatbot', true)
+                            ->count();
+            
+            return response()->json([
+                'support' => $supportCount,
+                'chatbot' => $chatbotCount,
+                'total' => $supportCount + $chatbotCount,
+                'count' => $supportCount + $chatbotCount
+            ]);
+        }
 
         if ($type) {
-            $count = Message::where('receiver_id', $userId)
+            $count = Message::where('receiver_id', $user->id)
                             ->where('is_read', false)
                             ->where('is_chatbot', $type === 'chatbot')
                             ->count();
             return response()->json(['count' => $count]);
         }
 
-        $supportCount = Message::where('receiver_id', $userId)
+        $supportCount = Message::where('receiver_id', $user->id)
                         ->where('is_read', false)
                         ->where('is_chatbot', false)
                         ->count();
 
-        $chatbotCount = Message::where('receiver_id', $userId)
+        $chatbotCount = Message::where('receiver_id', $user->id)
                         ->where('is_read', false)
                         ->where('is_chatbot', true)
                         ->count();
@@ -316,10 +366,9 @@ class MessageController extends Controller
         $userId = Auth::id(); // Guest
         $type = $request->query('type', 'support');
         
-        $admin = User::where('role', 'admin')->first();
-        if (!$admin) return response()->json(['message' => 'Admin not found'], 404);
+        $supportUserIds = User::whereIn('role', ['admin', 'staff'])->pluck('id');
 
-        Message::where('sender_id', $admin->id)
+        Message::whereIn('sender_id', $supportUserIds)
                ->where('receiver_id', $userId)
                ->where('is_chatbot', $type === 'chatbot')
                ->update(['is_read' => true]);
@@ -329,21 +378,23 @@ class MessageController extends Controller
 
     public function destroy(Request $request, $userId)
     {
-        $adminId = Auth::id();
-        $type = $request->query('type', 'support');
+        $user = Auth::user();
+        $type = ($user && $user->role === 'staff') ? 'support' : $request->query('type', 'support');
         $isChatbot = ($type === 'chatbot');
 
-        if (Auth::user()->role !== 'admin') {
+        if (!in_array($user->role, ['admin', 'staff'])) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        // Delete all messages between these two users for the given type
+        $supportUserIds = User::whereIn('role', ['admin', 'staff'])->pluck('id');
+
+        // Delete all messages between this user and the support team for the given type
         Message::where('is_chatbot', $isChatbot)
-            ->where(function($q) use ($userId, $adminId) {
-                $q->where(function($inner) use ($userId, $adminId) {
-                    $inner->where('sender_id', $adminId)->where('receiver_id', $userId);
-                })->orWhere(function($inner) use ($userId, $adminId) {
-                    $inner->where('sender_id', $userId)->where('receiver_id', $adminId);
+            ->where(function($q) use ($userId, $supportUserIds) {
+                $q->where(function($inner) use ($userId, $supportUserIds) {
+                    $inner->whereIn('sender_id', $supportUserIds)->where('receiver_id', $userId);
+                })->orWhere(function($inner) use ($userId, $supportUserIds) {
+                    $inner->where('sender_id', $userId)->whereIn('receiver_id', $supportUserIds);
                 });
             })
             ->delete();

@@ -188,6 +188,7 @@ const unreadMessagesCount = ref(0);
 let unreadPollingInterval = null;
 
 const prevChatbotCount = ref(0);
+const prevSupportCount = ref(0);
 const notifications = ref([]);
 const unreadNotificationCount = ref(0);
 const lastSeenNotificationId = ref(null);
@@ -351,26 +352,14 @@ const fetchUnreadCount = async () => {
   try {
     const response = await axios.get('/api/messages/unread');
     const newChatbotCount = response.data.chatbot || 0;
+    const newSupportCount = response.data.support || 0;
     
-    // Notify if new chatbot messages arrive and we're not on the messages page
-    if (newChatbotCount > prevChatbotCount.value && route.path !== '/admin/messages') {
-        Swal.fire({
-            toast: true,
-            position: 'top-end',
-            showConfirmButton: false,
-            timer: 4000,
-            timerProgressBar: true,
-            icon: 'info',
-            title: 'Bot Activity',
-            text: 'Someone is chatting with the bot.',
-            color: '#0f172a',
-            iconColor: '#BC9151'
-        });
-        
-        // Also refresh notifications list
+    // Refresh notifications list if a new message arrives and user is not on messages page
+    if ((newSupportCount > prevSupportCount.value || (state.user?.role === 'admin' && newChatbotCount > prevChatbotCount.value)) && route.path !== '/admin/messages') {
         fetchNotifications();
     }
     
+    prevSupportCount.value = newSupportCount;
     prevChatbotCount.value = newChatbotCount;
     unreadMessagesCount.value = response.data.count || 0;
   } catch (err) {
@@ -406,7 +395,7 @@ const menuItems = computed(() => {
   ];
   
   if (state.user?.role === 'staff') {
-    return allItems.filter(item => ['Dashboard', 'Reservations', 'Payments', 'Disputes'].includes(item.name));
+    return allItems.filter(item => ['Dashboard', 'Reservations', 'Messages', 'Payments', 'Disputes'].includes(item.name));
   }
   return allItems;
 });

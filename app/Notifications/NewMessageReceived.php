@@ -38,12 +38,14 @@ class NewMessageReceived extends Notification
      */
     public function toArray(object $notifiable): array
     {
+        $isAdminOrStaff = in_array($notifiable->role ?? '', ['admin', 'staff']);
+
         return [
-            'type' => 'info',
+            'type' => 'new_message',
             'icon' => 'bi bi-chat-dots-fill',
-            'title' => 'New Message from Support',
+            'title' => $isAdminOrStaff ? 'New Guest Message' : 'New Message from Support',
             'message' => $this->messageSnippet,
-            'action_url' => '/contact', // Or wherever chat widget is usually interacted with
+            'action_url' => $isAdminOrStaff ? '/admin/messages' : '/contact',
             'action_text' => 'Reply Now'
         ];
     }

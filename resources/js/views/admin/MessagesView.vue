@@ -10,8 +10,8 @@
              <span class="badge bg-gold-subtle text-gold rounded-pill px-3 py-2 fw-bold" style="font-size: 0.7rem; letter-spacing: 0.5px;">{{ users.length }} ONLINE</span>
           </div>
 
-          <!-- Type Tabs -->
-          <div class="nav nav-pills nav-fill bg-light p-1 rounded-pill mb-3 shadow-inner" style="font-size: 0.82rem;">
+          <!-- Type Tabs (Admin Only) -->
+          <div v-if="state.user?.role === 'admin'" class="nav nav-pills nav-fill bg-light p-1 rounded-pill mb-3 shadow-inner" style="font-size: 0.82rem;">
             <button class="nav-link rounded-pill py-2 border-0 transition-all fw-bold px-2 d-flex align-items-center justify-content-center gap-2" 
                     :class="activeTab === 'support' ? 'bg-premium-dark text-white shadow-sm' : 'text-muted'" 
                     @click="switchTab('support')">
@@ -78,7 +78,9 @@
                 <span v-else-if="activeTab === 'suspended'" class="badge bg-danger-subtle text-danger x-small rounded-pill fw-bold">SUSPENDED</span>
               </div>
               <p class="mb-0 text-muted small text-truncate d-flex align-items-center" v-if="user.last_message" style="font-size: 0.8rem;">
-                <span v-if="user.last_message.sender_id === adminId" class="text-gold me-1 fw-bold">You:</span>
+                <span v-if="user.last_message.sender_id !== user.id" class="text-gold me-1 fw-bold">
+                  {{ user.last_message.sender_id === adminId ? 'You:' : 'Support:' }}
+                </span>
                 <span :class="{ 'fw-bold text-dark': user.unread_count > 0 && activeTab !== 'suspended' }">{{ user.last_message.message }}</span>
               </p>
               <p v-else class="mb-0 text-muted small fst-italic">{{ activeTab === 'suspended' ? 'Account Restricted' : 'No messages yet' }}</p>
@@ -142,22 +144,24 @@
                         <span class="fw-bold small">View Profile</span>
                       </button>
                     </li>
-                    <li v-if="!selectedUser.is_suspended">
-                      <button class="dropdown-item rounded-3 py-2 px-3 d-flex align-items-center gap-3" @click="suspendGuest">
-                        <div class="bg-warning-subtle rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
-                          <i class="bi bi-person-x text-warning"></i>
-                        </div>
-                        <span class="fw-bold small">Suspend Guest</span>
-                      </button>
-                    </li>
-                    <li v-else>
-                      <button class="dropdown-item rounded-3 py-2 px-3 d-flex align-items-center gap-3 text-success" @click="confirmUnsuspend">
-                        <div class="bg-success-subtle rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
-                          <i class="bi bi-person-check text-success"></i>
-                        </div>
-                        <span class="fw-bold small">Unsuspend Account</span>
-                      </button>
-                    </li>
+                    <template v-if="state.user?.role === 'admin'">
+                      <li v-if="!selectedUser.is_suspended">
+                        <button class="dropdown-item rounded-3 py-2 px-3 d-flex align-items-center gap-3" @click="suspendGuest">
+                          <div class="bg-warning-subtle rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                            <i class="bi bi-person-x text-warning"></i>
+                          </div>
+                          <span class="fw-bold small">Suspend Guest</span>
+                        </button>
+                      </li>
+                      <li v-else>
+                        <button class="dropdown-item rounded-3 py-2 px-3 d-flex align-items-center gap-3 text-success" @click="confirmUnsuspend">
+                          <div class="bg-success-subtle rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                            <i class="bi bi-person-check text-success"></i>
+                          </div>
+                          <span class="fw-bold small">Unsuspend Account</span>
+                        </button>
+                      </li>
+                    </template>
                     <li><hr class="dropdown-divider bg-light mx-2"></li>
                     <li>
                       <button class="dropdown-item rounded-3 py-2 px-3 d-flex align-items-center gap-3 text-danger" @click="confirmDeleteChat">
@@ -202,18 +206,18 @@
 
                 <div v-for="(msg, index) in messages" :key="msg.id" 
                      class="d-flex w-100" 
-                     :class="msg.sender_id === adminId ? 'justify-content-end' : 'justify-content-start'">
+                     :class="msg.sender_id !== selectedUser?.id ? 'justify-content-end' : 'justify-content-start'">
                   
-                  <div class="message-wrapper d-flex flex-column" :class="msg.sender_id === adminId ? 'align-items-end' : 'align-items-start'" style="max-width: 80%;">
+                  <div class="message-wrapper d-flex flex-column" :class="msg.sender_id !== selectedUser?.id ? 'align-items-end' : 'align-items-start'" style="max-width: 80%;">
                     <div class="message-bubble p-3 shadow-sm position-relative text-break" 
-                         :class="msg.sender_id === adminId ? 
+                         :class="msg.sender_id !== selectedUser?.id ? 
                            (activeTab === 'chatbot' ? 'bg-gold-gradient text-white rounded-user' : 'bg-premium-dark-gradient text-white rounded-user') : 
                            'bg-white text-dark rounded-guest border border-light-dark'">
                        
                        <!-- Message Text with Link Detection -->
                        <p v-if="msg.message" class="mb-0" style="white-space: pre-wrap; font-size: 0.95rem; line-height: 1.5;">
                          <template v-for="(part, i) in formatMessageWithLinks(msg.message)" :key="i">
-                           <a v-if="part.type === 'link'" :href="part.content" target="_blank" class="chat-link fw-bold" :class="msg.sender_id === adminId ? 'text-white text-decoration-underline' : 'text-gold'">
+                           <a v-if="part.type === 'link'" :href="part.content" target="_blank" class="chat-link fw-bold" :class="msg.sender_id !== selectedUser?.id ? 'text-white text-decoration-underline' : 'text-gold'">
                              {{ part.content }}
                            </a>
                            <span v-else>{{ part.content }}</span>
@@ -228,7 +232,7 @@
                       <small class="text-muted" style="font-size: 0.7rem;">
                          {{ formatTime(msg.created_at) }}
                       </small>
-                      <i v-if="msg.sender_id === adminId" class="bi fs-6" 
+                      <i v-if="msg.sender_id !== selectedUser?.id" class="bi fs-6" 
                          :class="msg.is_read ? (activeTab === 'chatbot' ? 'bi-check-all text-gold' : 'bi-check-all text-primary-light') : 'bi-check text-muted'"></i>
                     </div>
                   </div>
@@ -409,19 +413,28 @@ const markAsRead = async () => {
 
 const viewProfile = () => {
   if (!selectedUser.value) return;
-  // Redirect to individual guest view or similar
   Swal.fire({
     title: selectedUser.value.name,
-    text: `Email: ${selectedUser.value.email}`,
+    html: `
+      <div class="text-start small p-2">
+        <p class="mb-2"><strong>Email:</strong> ${selectedUser.value.email || 'N/A'}</p>
+        <p class="mb-2"><strong>Phone:</strong> ${selectedUser.value.phone || 'N/A'}</p>
+        <p class="mb-2"><strong>Status:</strong> ${selectedUser.value.is_suspended ? '<span class="badge bg-danger-subtle text-danger">Suspended</span>' : '<span class="badge bg-success-subtle text-success">Active</span>'}</p>
+        ${selectedUser.value.is_suspended && selectedUser.value.suspension_reason ? `<p class="mb-0 text-muted"><strong>Reason:</strong> ${selectedUser.value.suspension_reason}</p>` : ''}
+      </div>
+    `,
     imageUrl: selectedUser.value.profile_photo_url || null,
-    imageWidth: 100,
-    imageHeight: 100,
+    imageWidth: 80,
+    imageHeight: 80,
     imageAlt: 'Profile',
     confirmButtonColor: '#0f172a',
-    confirmButtonText: 'Go to Guests',
-    showCancelButton: true
+    confirmButtonText: state.user?.role === 'admin' ? 'Go to Guests' : 'Close',
+    showCancelButton: state.user?.role === 'admin',
+    cancelButtonColor: '#718096',
+    cancelButtonText: 'Close',
+    reverseButtons: true
   }).then((result) => {
-    if (result.isConfirmed) {
+    if (result.isConfirmed && state.user?.role === 'admin') {
       router.push({ path: '/admin/guests', query: { search: selectedUser.value.email } });
     }
   });
@@ -563,6 +576,7 @@ const confirmUnsuspend = async () => {
 };
 
 const switchTab = (tab) => {
+  if (state.user?.role === 'staff' && tab !== 'support') return;
   activeTab.value = tab;
   selectedUser.value = null;
   messages.value = [];
@@ -736,6 +750,9 @@ const formatPrice = (price) => {
 };
 
 onMounted(() => {
+  if (state.user?.role === 'staff') {
+    activeTab.value = 'support';
+  }
   fetchConversations();
   fetchRooms();
   fetchTabCounts();
