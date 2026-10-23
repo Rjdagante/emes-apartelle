@@ -580,7 +580,7 @@ const formatIconClass = (icon) => {
 <style scoped>
 /* ========== HERO SECTION ========== */
 .hero-section {
-  background: url('/images/unsplash/hero-resort.jpg') center/cover no-repeat;
+  background: url('/images/unsplash/emespic.jpg') center/cover no-repeat;
   position: relative;
   min-height: 100vh;
   display: flex;
