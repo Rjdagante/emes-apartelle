@@ -231,11 +231,11 @@
               <div class="divider bg-white-20 my-3" style="height: 1px;"></div>
               <div class="d-flex justify-content-between text-white-50 small mb-1">
                 <span>Check-in</span>
-                <span class="text-white fw-bold">2:00 PM</span>
+                <span class="text-white fw-bold">1:00 PM</span>
               </div>
               <div class="d-flex justify-content-between text-white-50 small">
                 <span>Check-out</span>
-                <span class="text-white fw-bold">12:00 PM</span>
+                <span class="text-white fw-bold">11:00 AM</span>
               </div>
             </div>
           </div>
