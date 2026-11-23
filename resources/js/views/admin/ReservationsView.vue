@@ -34,63 +34,74 @@
             <table class="table table-hover align-middle mb-0">
               <thead>
                 <tr>
-                  <th class="ps-4 border-0 text-muted small fw-bold text-uppercase">Booking #</th>
-                  <th class="border-0 text-muted small fw-bold text-uppercase">Guest Info</th>
-                  <th class="border-0 text-muted small fw-bold text-uppercase">Room</th>
-                  <th class="border-0 text-muted small fw-bold text-uppercase">Check-in</th>
-                  <th class="border-0 text-muted small fw-bold text-uppercase">Check-out</th>
-                  <th class="border-0 text-muted small fw-bold text-uppercase">Price</th>
-                  <th class="border-0 text-muted small fw-bold text-uppercase">Status</th>
-                  <th class="border-0 text-muted small fw-bold text-uppercase">Payment</th>
-                  <th class="pe-4 border-0 text-muted small fw-bold text-uppercase text-end">Actions</th>
+                  <th class="ps-3 border-0 text-muted small fw-bold text-uppercase text-nowrap" style="width: 85px;">Booking #</th>
+                  <th class="border-0 text-muted small fw-bold text-uppercase text-nowrap" style="min-width: 170px;">Guest Info</th>
+                  <th class="border-0 text-muted small fw-bold text-uppercase text-nowrap" style="min-width: 150px;">Room</th>
+                  <th class="border-0 text-muted small fw-bold text-uppercase text-nowrap" style="width: 130px;">Check-in</th>
+                  <th class="border-0 text-muted small fw-bold text-uppercase text-nowrap" style="width: 130px;">Check-out</th>
+                  <th class="border-0 text-muted small fw-bold text-uppercase text-nowrap" style="width: 80px;">Price</th>
+                  <th class="border-0 text-muted small fw-bold text-uppercase text-nowrap" style="width: 110px;">Status</th>
+                  <th class="border-0 text-muted small fw-bold text-uppercase text-nowrap" style="width: 115px;">Payment</th>
+                  <th class="pe-3 border-0 text-muted small fw-bold text-uppercase text-end text-nowrap sticky-col-actions" style="width: 115px;">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="res in paginatedReservations" :key="res.id">
-                  <td class="ps-4 py-3">
+                  <td class="ps-3 py-2.5 text-nowrap">
                     <span class="small fw-bold text-secondary-dark">#RES-{{ res.id.toString().padStart(3, '0') }}</span>
                   </td>
-                  <td>
-                    <div class="d-flex align-items-center gap-3">
-                      <div class="avatar-md bg-gold-subtle rounded-circle d-flex align-items-center justify-content-center fw-bold text-gold overflow-hidden" style="width: 40px; height: 40px;">
+                  <td class="py-2.5">
+                    <div class="d-flex align-items-center gap-2">
+                      <div class="avatar-md bg-gold-subtle rounded-circle d-flex align-items-center justify-content-center fw-bold text-gold overflow-hidden flex-shrink-0" style="width: 32px; height: 32px; font-size: 0.8rem;">
                         <img v-if="res.user?.profile_photo_url" :src="res.user.profile_photo_url" :alt="res.user?.name" class="w-100 h-100 object-fit-cover">
-                        <span v-else>{{ (res.user?.name || 'G').charAt(0) }}</span>
+                        <span v-else>{{ (res.guest_name || res.user?.name || 'G').charAt(0) }}</span>
                       </div>
-                      <div>
-                        <span class="small fw-bold text-secondary-dark d-block">{{ res.user?.name || 'Guest Name' }}</span>
-                        <small class="text-muted d-block">{{ res.user?.email }}</small>
-                        <small class="text-muted" v-if="res.user?.phone"><i class="bi bi-telephone small me-1"></i>{{ res.user.phone }}</small>
+                      <div class="overflow-hidden" style="max-width: 160px;">
+                        <span class="small fw-bold text-secondary-dark d-block text-truncate">{{ res.guest_name || res.user?.name || 'Guest Name' }}</span>
+                        <small class="text-muted d-block text-truncate" style="font-size: 0.72rem;">{{ res.user?.email }}</small>
+                        <small class="text-muted d-block" style="font-size: 0.7rem;" v-if="res.user?.phone"><i class="bi bi-telephone small me-1"></i>{{ res.user.phone }}</small>
                       </div>
                     </div>
                   </td>
-                  <td>
-                    <span class="small fw-medium text-secondary-dark d-block">{{ res.room?.room_type }} #{{ res.room?.room_number }}</span>
-                    <small class="text-muted d-block" v-if="res.guests"><i class="bi bi-people me-1"></i>{{ res.guests }} Guest{{ res.guests > 1 ? 's' : '' }}</small>
+                  <td class="py-2.5">
+                    <div class="overflow-hidden" style="max-width: 160px;">
+                      <span class="small fw-semibold text-secondary-dark d-block text-truncate">{{ res.room?.room_type }} #{{ res.room?.room_number }}</span>
+                      <span v-if="res.package" class="badge bg-warning-subtle text-dark border border-warning-subtle rounded-pill x-small px-2 py-0.5 mt-0.5 d-inline-flex align-items-center text-truncate" style="max-width: 155px;" :title="res.package.name">
+                        <i class="bi bi-box2-heart-fill text-gold me-1 flex-shrink-0"></i><span class="text-truncate">{{ res.package.name }}</span>
+                      </span>
+                      <small class="text-muted d-block mt-0.5" style="font-size: 0.72rem;" v-if="res.guests">
+                        <i class="bi bi-people me-1"></i>{{ res.guests }} Guest{{ res.guests > 1 ? 's' : '' }}
+                        <template v-if="res.adults || res.children">
+                          ({{ res.adults || res.guests }}A<template v-if="res.children">, {{ res.children }}C</template>)
+                        </template>
+                        <span v-if="res.extra_guests > 0" class="badge bg-gold-subtle text-gold ms-1 px-1.5 py-0.5" style="font-size: 0.65rem;">+{{ res.extra_guests }} Extra Bed</span>
+                      </small>
+                    </div>
                   </td>
-                  <td>
+                  <td class="py-2.5 text-nowrap">
                     <input type="datetime-local" 
                       :value="formatToDateTimeLocal(res.check_in)" 
                       @change="e => updateCheckTimes(res, 'check_in', e.target.value)" 
-                      class="form-control form-control-sm border-0 bg-light py-1 px-2 rounded-3 small text-muted"
-                      style="width: 160px; font-size: 0.75rem;"
+                      class="form-control form-control-sm border-0 bg-light py-1 px-1.5 rounded-3 text-muted"
+                      style="width: 125px; font-size: 0.7rem;"
                     >
                   </td>
-                  <td>
+                  <td class="py-2.5 text-nowrap">
                     <input type="datetime-local" 
                       :value="formatToDateTimeLocal(res.check_out)" 
                       @change="e => updateCheckTimes(res, 'check_out', e.target.value)" 
-                      class="form-control form-control-sm border-0 bg-light py-1 px-2 rounded-3 small text-muted"
-                      style="width: 160px; font-size: 0.75rem;"
+                      class="form-control form-control-sm border-0 bg-light py-1 px-1.5 rounded-3 text-muted"
+                      style="width: 125px; font-size: 0.7rem;"
                     >
                   </td>
-                  <td><span class="fw-bold text-secondary-dark">₱{{ formatPrice(res.total_amount) }}</span></td>
-                  <td>
+                  <td class="py-2.5 text-nowrap"><span class="fw-bold text-secondary-dark small">₱{{ formatPrice(res.total_amount) }}</span></td>
+                  <td class="py-2.5 text-nowrap">
                     <select 
-                      class="form-select form-select-sm rounded-pill w-auto fw-bold text-uppercase border-0 shadow-sm px-3" 
+                      class="form-select form-select-sm rounded-pill w-auto fw-bold text-uppercase border-0 shadow-sm px-2.5 py-1" 
                       :class="statusBadgeClass(res.status)"
                       v-model="res.status"
                       @change="updateStatus(res)"
-                      style="font-size: 0.65rem;"
+                      style="font-size: 0.65rem; min-width: 105px;"
                     >
                       <option value="pending">PENDING</option>
                       <option value="confirmed">CONFIRMED</option>
@@ -99,13 +110,13 @@
                       <option value="cancellation_pending" v-if="res.status === 'cancellation_pending'">CANCELLATION PENDING</option>
                     </select>
                   </td>
-                  <td>
+                  <td class="py-2.5 text-nowrap">
                     <select 
-                      class="form-select form-select-sm rounded-pill w-auto fw-bold text-uppercase border-0 shadow-sm px-3" 
+                      class="form-select form-select-sm rounded-pill w-auto fw-bold text-uppercase border-0 shadow-sm px-2.5 py-1" 
                       :class="paymentBadgeClass(res.payment_status)"
                       v-model="res.payment_status"
                       @change="updatePaymentStatus(res)"
-                      style="font-size: 0.65rem;"
+                      style="font-size: 0.65rem; min-width: 105px;"
                     >
                       <option value="unpaid">UNPAID</option>
                       <option value="partially_paid">PARTIALLY PAID</option>
@@ -113,8 +124,8 @@
                       <option value="refunded">REFUNDED</option>
                     </select>
                   </td>
-                  <td class="pe-4 text-end">
-                    <div class="d-flex justify-content-end gap-2">
+                  <td class="pe-3 py-2.5 text-end text-nowrap sticky-col-actions">
+                    <div class="d-flex justify-content-end gap-1.5">
                       <button class="btn btn-action-view" title="View Booking Details" @click="openReservationDetailModal(res)">
                         <i class="bi bi-eye"></i>
                       </button>
@@ -214,12 +225,12 @@
        <div v-if="showNewBookingModal" class="modal-backdrop fade show" style="z-index: 1050;"></div>
        <div v-if="showNewBookingModal" class="modal fade show d-block" tabindex="-1" style="z-index: 1055;" @click.self="closeNewBookingModal">
          <div class="modal-dialog modal-dialog-centered modal-lg">
-           <div class="modal-content border-0 rounded-4 shadow-lg overflow-hidden">
+           <div class="modal-content border-0 rounded-4 shadow-lg" style="overflow: visible;">
              <div class="modal-header border-bottom px-4 py-3 align-items-center">
                <h5 class="modal-title serif-font fw-bold text-secondary-dark">Add New Booking</h5>
                <button type="button" class="btn-close shadow-none" @click="closeNewBookingModal"></button>
              </div>
-             <div class="modal-body p-4 bg-light-subtle">
+             <div class="modal-body p-4 bg-light-subtle rounded-bottom-4" style="overflow: visible;">
                 <div class="alert alert-info border-0 shadow-sm d-flex align-items-center gap-3 rounded-3 mb-4">
                   <i class="bi bi-info-circle-fill text-info fs-5"></i>
                   <span class="small text-muted">Use this form for walk-in guests or phone reservations.</span>
@@ -239,14 +250,65 @@
                       <div class="form-text text-end"><a href="#" class="text-gold text-decoration-none small fw-bold" @click.prevent="showRegisterGuestModal = true">+ Register New Guest</a></div>
                     </div>
 
-                    <!-- Dates -->
-                    <div class="col-md-6">
-                       <label class="form-label-custom small fw-bold text-uppercase text-muted mb-1">Check-in Date & Time</label>
-                       <input type="datetime-local" class="form-control form-control-custom py-2" v-model="newBooking.check_in" :min="todayDateTimeStr" required>
+                    <!-- Dates (Guest style date pickers) -->
+                    <div class="col-md-6 position-relative" ref="modalCheckInWrapper">
+                       <label class="form-label-custom small fw-bold text-uppercase text-muted mb-1">Check-in</label>
+                       <div class="input-wrapper-custom cursor-pointer" @click="toggleModalCheckIn">
+                         <i class="bi bi-calendar-event input-icon-custom"></i>
+                         <div 
+                           class="form-control-custom-date d-flex align-items-center justify-content-between select-none"
+                           :class="{ 'border-gold shadow-gold-sm': showModalCheckInCalendar }"
+                         >
+                           <span v-if="newBooking.check_in" class="fw-semibold text-secondary-dark">
+                             {{ formatDisplayDate(newBooking.check_in) }}
+                           </span>
+                           <span v-else class="text-muted opacity-75">Select date</span>
+                           <i class="bi bi-chevron-down small text-muted opacity-50 ms-1"></i>
+                         </div>
+                       </div>
+                       <div 
+                         v-if="showModalCheckInCalendar" 
+                         class="calendar-popup position-absolute start-0 mt-2 animate-fade-in shadow-xl"
+                         style="z-index: 1060;"
+                       >
+                         <CalendarPicker
+                           v-model="newBooking.check_in"
+                           :min-date="todayYMD"
+                           :disabled-dates="modalBookedDates"
+                           @update:modelValue="onModalCheckInSelected"
+                         />
+                       </div>
                     </div>
-                    <div class="col-md-6">
-                       <label class="form-label-custom small fw-bold text-uppercase text-muted mb-1">Check-out Date & Time</label>
-                       <input type="datetime-local" class="form-control form-control-custom py-2" v-model="newBooking.check_out" :min="newBooking.check_in || todayDateTimeStr" required>
+
+                    <div class="col-md-6 position-relative" ref="modalCheckOutWrapper">
+                       <label class="form-label-custom small fw-bold text-uppercase text-muted mb-1">Check-out</label>
+                       <div class="input-wrapper-custom cursor-pointer" @click="toggleModalCheckOut">
+                         <i class="bi bi-calendar-check input-icon-custom"></i>
+                         <div 
+                           class="form-control-custom-date d-flex align-items-center justify-content-between select-none"
+                           :class="{ 'border-gold shadow-gold-sm': showModalCheckOutCalendar }"
+                         >
+                           <span v-if="newBooking.check_out" class="fw-semibold text-secondary-dark">
+                             {{ formatDisplayDate(newBooking.check_out) }}
+                           </span>
+                           <span v-else class="text-muted opacity-75">Select date</span>
+                           <i class="bi bi-chevron-down small text-muted opacity-50 ms-1"></i>
+                         </div>
+                       </div>
+                       <div 
+                         v-if="showModalCheckOutCalendar" 
+                         class="calendar-popup position-absolute end-0 mt-2 animate-fade-in shadow-xl"
+                         style="z-index: 1060;"
+                       >
+                         <CalendarPicker
+                           v-model="newBooking.check_out"
+                           :min-date="newBooking.check_in || todayYMD"
+                           :max-date="modalMaxCheckOutDate"
+                           :disabled-dates="modalBookedDates"
+                           :is-checkout="true"
+                           @update:modelValue="onModalCheckOutSelected"
+                         />
+                       </div>
                     </div>
                     <!-- Room Selection -->
                     <div class="col-12">
@@ -273,16 +335,21 @@
 
                     <!-- Guest Count Selection -->
                     <div class="col-12" v-if="newBooking.room_id">
-                       <label class="form-label-custom small fw-bold text-uppercase text-muted mb-1">Number of Guests</label>
-                       <select class="form-select form-control-custom py-2" v-model="newBooking.guests" required>
-                         <option v-for="n in (selectedNewBookingRoom ? selectedNewBookingRoom.max_occupancy : 12)" 
-                                 :key="n" 
-                                 :value="n" 
-                                 :disabled="selectedNewBookingRoom && selectedNewBookingRoom.min_occupancy && n < selectedNewBookingRoom.min_occupancy">
-                           {{ n }} Guest{{ n > 1 ? 's' : '' }}
-                         </option>
-                       </select>
-                     </div>
+                       <label class="form-label-custom small fw-bold text-uppercase text-muted mb-1">Total Guests</label>
+                       <GuestSelector 
+                         v-model="newBooking.guests"
+                         v-model:adultsValue="newBooking.adults"
+                         v-model:childrenValue="newBooking.children"
+                         v-model:childrenAgesValue="newBooking.children_ages"
+                         :maxOccupancy="maxWalkinGuests"
+                         :minOccupancy="Number(selectedNewBookingRoom?.min_occupancy || 1)"
+                         triggerClass="px-3 py-2"
+                       />
+                       <div v-if="selectedNewBookingRoom && newBooking.guests > selectedNewBookingRoom.max_occupancy" class="form-text x-small text-gold fw-semibold mt-1">
+                         <i class="bi bi-info-circle me-1"></i>
+                         +{{ newBooking.guests - selectedNewBookingRoom.max_occupancy }} Extra Bedding @ ₱{{ formatPrice(selectedNewBookingRoom.extra_bed_price || 300) }}/night
+                       </div>
+                    </div>
                   </div>
                   
                   <div class="d-flex justify-content-end gap-3 mt-5 pt-3 border-top">
@@ -418,13 +485,30 @@
                       <div class="d-flex align-items-center gap-3">
                         <div class="avatar-lg bg-gold-subtle rounded-circle d-flex align-items-center justify-content-center fw-bold text-gold overflow-hidden" style="width: 52px; height: 52px; min-width: 52px;">
                           <img v-if="selectedReservation.user?.profile_photo_url" :src="selectedReservation.user.profile_photo_url" :alt="selectedReservation.user?.name" class="w-100 h-100 object-fit-cover">
-                          <span v-else style="font-size: 1.2rem;">{{ (selectedReservation.user?.name || 'G').charAt(0) }}</span>
+                          <span v-else style="font-size: 1.2rem;">{{ (selectedReservation.guest_name || selectedReservation.user?.name || 'G').charAt(0) }}</span>
                         </div>
                         <div class="overflow-hidden">
-                          <h6 class="fw-bold text-secondary-dark mb-1 fs-6 text-truncate">{{ selectedReservation.user?.name || 'Guest' }}</h6>
+                          <h6 class="fw-bold text-secondary-dark mb-1 fs-6 text-truncate">{{ selectedReservation.guest_name || selectedReservation.user?.name || 'Guest' }}</h6>
+                          <p class="text-muted mb-1 small text-truncate" v-if="selectedReservation.guest_name && selectedReservation.user && selectedReservation.guest_name !== selectedReservation.user.name"><i class="bi bi-person-check me-2"></i>Account: {{ selectedReservation.user.name }}</p>
                           <p class="text-muted mb-1 small text-truncate"><i class="bi bi-envelope me-2"></i>{{ selectedReservation.user?.email || 'N/A' }}</p>
                           <p class="text-muted mb-0 small"><i class="bi bi-telephone me-2"></i>{{ selectedReservation.user?.phone || 'N/A' }}</p>
                         </div>
+                      </div>
+                    </div>
+
+                    <!-- Package Card (if booked under package) -->
+                    <div v-if="selectedReservation.package" class="detail-card rounded-4 p-3 bg-white shadow-sm border border-warning-subtle animate-fade-in">
+                      <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="badge bg-gold text-white text-uppercase px-2.5 py-1 rounded-pill x-small fw-bold">
+                          <i class="bi bi-box2-heart-fill me-1"></i> Tour Package
+                        </span>
+                        <span class="fw-bold text-gold small">₱{{ formatPrice(selectedReservation.package.price) }}</span>
+                      </div>
+                      <h6 class="fw-bold text-secondary-dark mb-1">{{ selectedReservation.package.name }}</h6>
+                      <small class="text-muted d-block">{{ selectedReservation.package.duration }} · {{ selectedReservation.package.pax }}</small>
+                      <div class="small text-muted mt-2 pt-2 border-top" v-if="selectedReservation.package.inclusions">
+                        <span class="fw-semibold text-secondary-dark d-block mb-1">Inclusions:</span>
+                        {{ selectedReservation.package.inclusions }}
                       </div>
                     </div>
 
@@ -523,33 +607,62 @@
                     <div class="detail-card rounded-4 p-3 bg-white shadow-sm border border-light-subtle animate-fade-in">
                       <h6 class="text-uppercase text-gold fw-bold small tracking-wider mb-3"><i class="bi bi-credit-card me-2"></i>Financial Summary</h6>
                       <div class="d-flex flex-column gap-2 mb-3">
-                        <div class="d-flex justify-content-between align-items-center">
-                          <small class="text-muted">
-                            {{ (selectedReservation.room?.room_type === 'Family Room' || selectedReservation.room?.room_type === 'Barkadahan Room') ? 'Price Per Head / Night' : 'Price Per Night' }}
-                          </small>
-                          <span class="small fw-semibold text-secondary-dark">
-                            ₱{{ formatPrice((selectedReservation.room?.room_type === 'Family Room' || selectedReservation.room?.room_type === 'Barkadahan Room') ? selectedReservation.room?.price_per_head : selectedReservation.room?.price_per_night) }}
-                          </span>
-                        </div>
-                        <div class="d-flex justify-content-between align-items-center" v-if="selectedReservation.guests && (selectedReservation.room?.room_type === 'Family Room' || selectedReservation.room?.room_type === 'Barkadahan Room')">
-                          <small class="text-muted">Guests</small>
-                          <span class="small fw-semibold text-secondary-dark">{{ selectedReservation.guests }} Guest{{ selectedReservation.guests > 1 ? 's' : '' }}</span>
-                        </div>
-                        <div class="d-flex justify-content-between align-items-center">
-                          <small class="text-muted">Nights</small>
-                          <span class="small fw-semibold text-secondary-dark">{{ totalReservationNights(selectedReservation) }} Night{{ totalReservationNights(selectedReservation) > 1 ? 's' : '' }}</span>
-                        </div>
-                        <div class="d-flex justify-content-between align-items-center border-top pt-2 mt-1">
-                          <small class="text-muted">Breakdown</small>
-                          <span class="x-small text-muted" style="font-style: italic;">
-                            <template v-if="selectedReservation.room?.room_type === 'Family Room' || selectedReservation.room?.room_type === 'Barkadahan Room'">
-                              ((₱{{ formatPrice(selectedReservation.room?.price_per_head) }} × {{ selectedReservation.guests || 1 }} guests) × {{ totalReservationNights(selectedReservation) }} nights)
-                            </template>
-                            <template v-else>
-                              (₱{{ formatPrice(selectedReservation.room?.price_per_night) }} × {{ totalReservationNights(selectedReservation) }} nights)
-                            </template>
-                          </span>
-                        </div>
+                        <template v-if="selectedReservation.package">
+                          <div class="d-flex justify-content-between align-items-center">
+                            <small class="text-muted">Tour Package</small>
+                            <span class="small fw-semibold text-secondary-dark">{{ selectedReservation.package.name }}</span>
+                          </div>
+                          <div class="d-flex justify-content-between align-items-center">
+                            <small class="text-muted">Package Rate</small>
+                            <span class="small fw-semibold text-secondary-dark">₱{{ formatPrice(selectedReservation.package.price) }}</span>
+                          </div>
+                          <div class="d-flex justify-content-between align-items-center">
+                            <small class="text-muted">Duration & Guests</small>
+                            <span class="small fw-semibold text-secondary-dark">{{ selectedReservation.package.duration }} ({{ selectedReservation.package.pax }})</span>
+                          </div>
+                          <div class="d-flex justify-content-between align-items-center border-top pt-2 mt-1">
+                            <small class="text-muted">Details</small>
+                            <span class="x-small text-muted" style="font-style: italic;">All-inclusive room accommodation + island tour</span>
+                          </div>
+                        </template>
+                        <template v-else>
+                          <div class="d-flex justify-content-between align-items-center">
+                            <small class="text-muted">
+                              {{ (selectedReservation.room?.room_type === 'Family Room' || selectedReservation.room?.room_type === 'Barkadahan Room') ? 'Price Per Head / Night' : 'Price Per Night' }}
+                            </small>
+                            <span class="small fw-semibold text-secondary-dark">
+                              ₱{{ formatPrice((selectedReservation.room?.room_type === 'Family Room' || selectedReservation.room?.room_type === 'Barkadahan Room') ? selectedReservation.room?.price_per_head : selectedReservation.room?.price_per_night) }}
+                            </span>
+                          </div>
+                          <div class="d-flex justify-content-between align-items-center" v-if="selectedReservation.guests && (selectedReservation.room?.room_type === 'Family Room' || selectedReservation.room?.room_type === 'Barkadahan Room')">
+                            <small class="text-muted">Guests</small>
+                            <span class="small fw-semibold text-secondary-dark">
+                              {{ selectedReservation.guests }} Guest{{ selectedReservation.guests > 1 ? 's' : '' }}
+                              <template v-if="selectedReservation.adults || selectedReservation.children">
+                                ({{ selectedReservation.adults || selectedReservation.guests }} Adult{{ (selectedReservation.adults || selectedReservation.guests) > 1 ? 's' : '' }}<template v-if="selectedReservation.children">, {{ selectedReservation.children }} Child{{ selectedReservation.children > 1 ? 'ren' : '' }}</template>)
+                              </template>
+                            </span>
+                          </div>
+                          <div class="d-flex justify-content-between align-items-center" v-if="selectedReservation.extra_guests > 0 || selectedReservation.extra_bed_charge > 0">
+                            <small class="text-gold">Additional Beddings</small>
+                            <span class="small fw-semibold text-gold">+₱{{ formatPrice(selectedReservation.extra_bed_charge || (selectedReservation.extra_guests * (selectedReservation.room?.extra_bed_price || 300) * totalReservationNights(selectedReservation))) }}</span>
+                          </div>
+                          <div class="d-flex justify-content-between align-items-center">
+                            <small class="text-muted">Nights</small>
+                            <span class="small fw-semibold text-secondary-dark">{{ totalReservationNights(selectedReservation) }} Night{{ totalReservationNights(selectedReservation) > 1 ? 's' : '' }}</span>
+                          </div>
+                          <div class="d-flex justify-content-between align-items-center border-top pt-2 mt-1">
+                            <small class="text-muted">Breakdown</small>
+                            <span class="x-small text-muted" style="font-style: italic;">
+                              <template v-if="selectedReservation.room?.room_type === 'Family Room' || selectedReservation.room?.room_type === 'Barkadahan Room'">
+                                ((₱{{ formatPrice(selectedReservation.room?.price_per_head) }} × {{ selectedReservation.guests || 1 }} guests) × {{ totalReservationNights(selectedReservation) }} nights)
+                              </template>
+                              <template v-else>
+                                (₱{{ formatPrice(selectedReservation.room?.price_per_night) }} × {{ totalReservationNights(selectedReservation) }} nights)
+                              </template>
+                            </span>
+                          </div>
+                        </template>
                         
                         <!-- If 50% downpayment option -->
                         <template v-if="selectedReservation.payment_option === 'downpayment' || selectedReservation.payment_option === 'half_downpayment' || selectedReservation.downpayment_amount > 0">
@@ -629,12 +742,12 @@
                         </select>
                       </div>
                       <div class="mb-3">
-                        <label class="form-label-custom small fw-bold text-uppercase text-muted mb-1 d-block">Start Date & Time</label>
-                        <input type="datetime-local" v-model="blockForm.start_date" class="form-control rounded-3" required>
+                        <label class="form-label-custom small fw-bold text-uppercase text-muted mb-1 d-block">Start Date</label>
+                        <input type="date" v-model="blockForm.start_date" class="form-control rounded-3" required>
                       </div>
                       <div class="mb-3">
-                        <label class="form-label-custom small fw-bold text-uppercase text-muted mb-1 d-block">End Date & Time</label>
-                        <input type="datetime-local" v-model="blockForm.end_date" class="form-control rounded-3" required>
+                        <label class="form-label-custom small fw-bold text-uppercase text-muted mb-1 d-block">End Date</label>
+                        <input type="date" v-model="blockForm.end_date" :min="blockForm.start_date" class="form-control rounded-3" required>
                       </div>
                       <div class="mb-3">
                         <label class="form-label-custom small fw-bold text-uppercase text-muted mb-1 d-block">Reason / Event Name</label>
@@ -693,12 +806,14 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch, reactive } from 'vue';
+import { ref, onMounted, onUnmounted, computed, watch, reactive } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import { notify, confirm } from '../../utils/sweetalert';
 import AdminPagination from '../../components/AdminPagination.vue';
+import CalendarPicker from '../../components/CalendarPicker.vue';
+import GuestSelector from '../../components/GuestSelector.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -798,11 +913,11 @@ const getReservationsForDate = (dateStr) => {
 
 const handleEmptyDayClick = (dateStr) => {
   openNewBookingModal();
-  newBooking.value.check_in = `${dateStr}T14:00`;
-  const checkOutDate = new Date(dateStr);
+  newBooking.value.check_in = dateStr;
+  const checkOutDate = new Date(dateStr + 'T00:00:00');
   checkOutDate.setDate(checkOutDate.getDate() + 1);
-  const nextDayStr = `${checkOutDate.getFullYear()}-${String(checkOutDate.getMonth() + 1).padStart(2, '0')}-${String(checkOutDate.getDate()).padStart(2, '0')}`;
-  newBooking.value.check_out = `${nextDayStr}T12:00`;
+  newBooking.value.check_out = formatToYMD(checkOutDate);
+  fetchAvailableRooms();
 };
 
 const openReservationDetailModal = (res) => {
@@ -848,24 +963,167 @@ const newBooking = ref({
   room_id: '',
   check_in: '',
   check_out: '',
-  guests: 1
+  guests: 1,
+  adults: 1,
+  children: 0,
+  children_ages: []
+});
+
+// New Booking Datepicker (Guest Style) State
+const modalCheckInWrapper = ref(null);
+const modalCheckOutWrapper = ref(null);
+const showModalCheckInCalendar = ref(false);
+const showModalCheckOutCalendar = ref(false);
+const modalBookedDates = ref([]);
+
+const formatToYMD = (date) => {
+  if (!date) return '';
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return '';
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatDisplayDate = (dateStr) => {
+  if (!dateStr) return '';
+  const clean = String(dateStr).includes('T') ? dateStr.split('T')[0] : dateStr.split(' ')[0];
+  const parts = clean.split('-');
+  if (parts.length === 3) {
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+    const date = new Date(y, m, d);
+    if (!isNaN(date.getTime())) {
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      });
+    }
+  }
+  const date = new Date(clean + 'T00:00:00');
+  if (isNaN(date.getTime())) return dateStr;
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
+};
+
+const todayYMD = computed(() => formatToYMD(new Date()));
+
+const modalMaxCheckOutDate = computed(() => {
+  if (!newBooking.value.check_in || !modalBookedDates.value.length) return null;
+  const checkInDate = new Date(newBooking.value.check_in + 'T00:00:00');
+
+  let firstNextDate = null;
+  modalBookedDates.value.forEach((range) => {
+    const startStr = (range.check_in || range.start || range.start_date || '').split(' ')[0].split('T')[0];
+    if (startStr) {
+      const start = new Date(startStr + 'T00:00:00');
+      if (start > checkInDate) {
+        if (!firstNextDate || start < firstNextDate) {
+          firstNextDate = start;
+        }
+      }
+    }
+  });
+
+  return firstNextDate ? formatToYMD(firstNextDate) : null;
+});
+
+const toggleModalCheckIn = () => {
+  showModalCheckInCalendar.value = !showModalCheckInCalendar.value;
+  if (showModalCheckInCalendar.value) {
+    showModalCheckOutCalendar.value = false;
+  }
+};
+
+const toggleModalCheckOut = () => {
+  showModalCheckOutCalendar.value = !showModalCheckOutCalendar.value;
+  if (showModalCheckOutCalendar.value) {
+    showModalCheckInCalendar.value = false;
+  }
+};
+
+const onModalCheckInSelected = (val) => {
+  showModalCheckInCalendar.value = false;
+  if (!newBooking.value.check_out || newBooking.value.check_out <= val) {
+    const nextDay = new Date(val + 'T00:00:00');
+    nextDay.setDate(nextDay.getDate() + 1);
+    newBooking.value.check_out = formatToYMD(nextDay);
+    showModalCheckOutCalendar.value = true;
+  }
+  fetchAvailableRooms();
+};
+
+const onModalCheckOutSelected = (val) => {
+  showModalCheckOutCalendar.value = false;
+  validateDates();
+  fetchAvailableRooms();
+};
+
+const handleModalClickOutside = (e) => {
+  if (modalCheckInWrapper.value && !modalCheckInWrapper.value.contains(e.target)) {
+    showModalCheckInCalendar.value = false;
+  }
+  if (modalCheckOutWrapper.value && !modalCheckOutWrapper.value.contains(e.target)) {
+    showModalCheckOutCalendar.value = false;
+  }
+};
+
+const fetchModalBookedDates = async () => {
+  try {
+    let url = '/api/rooms/booked-dates';
+    if (newBooking.value.room_id) {
+      url = `/api/rooms/${newBooking.value.room_id}/booked-dates`;
+    }
+    const response = await axios.get(url);
+    modalBookedDates.value = Array.isArray(response.data) ? response.data : [];
+  } catch (err) {
+    console.error('Failed to fetch modal booked dates', err);
+    modalBookedDates.value = [];
+  }
+};
+
+watch(() => newBooking.value.room_id, () => {
+  if (showNewBookingModal.value) {
+    fetchModalBookedDates();
+  }
 });
 
 const selectedNewBookingRoom = computed(() => {
   return availableRooms.value.find(r => r.id === newBooking.value.room_id);
 });
 
+const maxWalkinGuests = computed(() => {
+  if (!selectedNewBookingRoom.value) return 4;
+  const base = Number(selectedNewBookingRoom.value.max_occupancy || 4);
+  const extra = Number(selectedNewBookingRoom.value.max_extra_guests || 0);
+  return base + extra;
+});
+
 // Watch selected room to auto-adjust guests count
 watch(selectedNewBookingRoom, (newRoom) => {
   if (newRoom) {
-    if (newBooking.value.guests > newRoom.max_occupancy) {
-      newBooking.value.guests = newRoom.max_occupancy;
+    const maxAllowed = Number(newRoom.max_occupancy || 1) + Number(newRoom.max_extra_guests || 0);
+    if (newBooking.value.guests > maxAllowed) {
+      newBooking.value.guests = maxAllowed;
+      newBooking.value.adults = maxAllowed;
+      newBooking.value.children = 0;
+      newBooking.value.children_ages = [];
     }
     if (newRoom.min_occupancy && newBooking.value.guests < newRoom.min_occupancy) {
       newBooking.value.guests = newRoom.min_occupancy;
+      newBooking.value.adults = newRoom.min_occupancy;
     }
-    if (newRoom.room_type.toLowerCase().includes('single')) {
+    if (newRoom.room_type && newRoom.room_type.toLowerCase().includes('single')) {
       newBooking.value.guests = 1;
+      newBooking.value.adults = 1;
+      newBooking.value.children = 0;
+      newBooking.value.children_ages = [];
     }
   }
 });
@@ -873,8 +1131,9 @@ watch(selectedNewBookingRoom, (newRoom) => {
 // Watch guests count to stay within selected room constraints
 watch(() => newBooking.value.guests, (newGuests) => {
   if (selectedNewBookingRoom.value) {
-    if (newGuests > selectedNewBookingRoom.value.max_occupancy) {
-      newBooking.value.guests = selectedNewBookingRoom.value.max_occupancy;
+    const maxAllowed = Number(selectedNewBookingRoom.value.max_occupancy || 1) + Number(selectedNewBookingRoom.value.max_extra_guests || 0);
+    if (newGuests > maxAllowed) {
+      newBooking.value.guests = maxAllowed;
     }
     if (selectedNewBookingRoom.value.min_occupancy && newGuests < selectedNewBookingRoom.value.min_occupancy) {
       newBooking.value.guests = selectedNewBookingRoom.value.min_occupancy;
@@ -953,6 +1212,16 @@ const registerGuest = async () => {
   }
 };
 
+const sortRoomsByNumber = (list) => {
+  if (!Array.isArray(list)) return [];
+  return [...list].sort((a, b) => {
+    return String(a.room_number || '').localeCompare(String(b.room_number || ''), undefined, {
+      numeric: true,
+      sensitivity: 'base'
+    });
+  });
+};
+
 const fetchAvailableRooms = async () => {
   try {
     const params = {};
@@ -962,7 +1231,7 @@ const fetchAvailableRooms = async () => {
     }
     const response = await axios.get('/api/rooms', { params });
     // Filter out only available rooms generally, or specific logic if backend handles it
-    availableRooms.value = response.data.filter(r => r.status === 'available');
+    availableRooms.value = sortRoomsByNumber(response.data.filter(r => r.status === 'available'));
   } catch (err) {
     console.error('Failed to fetch rooms', err);
   }
@@ -970,14 +1239,30 @@ const fetchAvailableRooms = async () => {
 
 const openNewBookingModal = () => {
   showNewBookingModal.value = true;
+  showModalCheckInCalendar.value = false;
+  showModalCheckOutCalendar.value = false;
   fetchUsers();
+  const today = new Date();
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  newBooking.value = { 
+    user_id: '', 
+    room_id: '', 
+    check_in: formatToYMD(today), 
+    check_out: formatToYMD(tomorrow), 
+    guests: 1,
+    adults: 1,
+    children: 0,
+    children_ages: []
+  };
+  fetchModalBookedDates();
   fetchAvailableRooms();
-  // Reset form
-  newBooking.value = { user_id: '', room_id: '', check_in: '', check_out: '', guests: 1 };
 };
 
 const closeNewBookingModal = () => {
   showNewBookingModal.value = false;
+  showModalCheckInCalendar.value = false;
+  showModalCheckOutCalendar.value = false;
 };
 
 const validateDates = () => {
@@ -1015,10 +1300,23 @@ const getRoomImage = (room) => {
 };
 
 const createBooking = async () => {
+   if (!newBooking.value.check_in || !newBooking.value.check_out) {
+     notify.warning('Dates Required', 'Please select both check-in and check-out dates.');
+     return;
+   }
    isSubmitting.value = true;
    try {
+     const checkInStr = newBooking.value.check_in.includes('T') 
+       ? newBooking.value.check_in 
+       : `${newBooking.value.check_in}T13:00:00`;
+     const checkOutStr = newBooking.value.check_out.includes('T') 
+       ? newBooking.value.check_out 
+       : `${newBooking.value.check_out}T11:00:00`;
+
      await axios.post('/api/reservations', {
        ...newBooking.value,
+       check_in: checkInStr,
+       check_out: checkOutStr,
        created_by_admin: true // Flag to backend if needed
      });
      notify.success('Success', 'Booking created successfully.');
@@ -1038,6 +1336,7 @@ const filteredReservations = computed(() => {
   return reservations.value.filter(res => {
     const resId = `res-${res.id.toString().padStart(3, '0')}`;
     return (
+      res.guest_name?.toLowerCase().includes(q) ||
       res.user?.name?.toLowerCase().includes(q) || 
       res.user?.email?.toLowerCase().includes(q) || 
       res.user?.phone?.toLowerCase().includes(q) || 
@@ -1169,7 +1468,7 @@ const updateStatus = async (res) => {
     fetchReservations();
   } catch (err) {
     console.error('Failed to update status', err);
-    notify.error('Update Failed', 'Could not save status change to the server.');
+    notify.error('Update Failed', err.response?.data?.message || 'Could not save status change to the server.');
     fetchReservations();
   }
 };
@@ -1251,7 +1550,7 @@ const updatePaymentStatus = async (res) => {
     notify.success('Payment Updated', `Reservation #RES-${res.id.toString().padStart(3, '0')} marked as ${res.payment_status.toUpperCase()}.`);
   } catch (err) {
     console.error('Failed to update payment status', err);
-    notify.error('Update Failed', 'Could not save payment change to the server.');
+    notify.error('Update Failed', err.response?.data?.message || 'Could not save payment change to the server.');
     fetchReservations();
   }
 };
@@ -1367,7 +1666,7 @@ const openManageBlockedDatesModal = () => {
 const fetchAllRooms = async () => {
   try {
     const response = await axios.get('/api/rooms');
-    allRooms.value = response.data;
+    allRooms.value = sortRoomsByNumber(response.data);
   } catch (err) {
     console.error('Failed to fetch rooms', err);
   }
@@ -1425,13 +1724,18 @@ const deleteBlockedDate = async (id) => {
 
 const formatDateShort = (dateStr) => {
   if (!dateStr) return '';
-  const date = new Date(dateStr);
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const date = new Date(dateStr.replace(' ', 'T'));
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
 onMounted(() => {
   fetchReservations();
   fetchBlockedDates();
+  document.addEventListener('click', handleModalClickOutside);
+});
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleModalClickOutside);
 });
 </script>
 
@@ -1460,16 +1764,36 @@ onMounted(() => {
   box-shadow: none;
 }
 
-.btn-action-invoice, .btn-action-delete {
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
+/* Sticky Actions Column - Guaranteed visible at all times */
+.sticky-col-actions {
+  position: sticky;
+  right: 0;
+  background-color: #ffffff;
+  z-index: 2;
+  box-shadow: -4px 0 10px rgba(0, 0, 0, 0.04);
+}
+
+thead th.sticky-col-actions {
+  background-color: #ffffff;
+  z-index: 3;
+}
+
+.table-hover tbody tr:hover td.sticky-col-actions {
+  background-color: #f8fafc;
+}
+
+.btn-action-view,
+.btn-action-invoice,
+.btn-action-delete {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: none;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  font-size: 1.1rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 0.95rem;
 }
 
 .btn-action-invoice {
@@ -1480,8 +1804,8 @@ onMounted(() => {
 .btn-action-invoice:hover {
   background-color: var(--primary-gold);
   color: white;
-  transform: translateY(-3px) rotate(8deg);
-  box-shadow: 0 5px 15px rgba(188, 145, 81, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(188, 145, 81, 0.3);
 }
 
 .btn-action-delete {
@@ -1492,20 +1816,11 @@ onMounted(() => {
 .btn-action-delete:hover {
   background-color: #ef4444;
   color: white;
-  transform: translateY(-3px) rotate(-8deg);
-  box-shadow: 0 5px 15px rgba(239, 68, 68, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(239, 68, 68, 0.3);
 }
 
 .btn-action-view {
-  width: 38px;
-  height: 38px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  font-size: 1.1rem;
   background-color: #f1f5f9;
   color: #64748b;
 }
@@ -1513,8 +1828,8 @@ onMounted(() => {
 .btn-action-view:hover {
   background-color: #e2e8f0;
   color: var(--secondary-dark);
-  transform: translateY(-3px) rotate(-8deg);
-  box-shadow: 0 5px 15px rgba(100, 116, 139, 0.2);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(100, 116, 139, 0.2);
 }
 
 .detail-card {
@@ -1712,5 +2027,65 @@ onMounted(() => {
   color: var(--primary-gold);
   transform: scale(1.05);
   border-color: var(--primary-gold-subtle);
+}
+
+.input-wrapper-custom {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-icon-custom {
+  position: absolute;
+  left: 1rem;
+  color: var(--primary-gold);
+  font-size: 1.05rem;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.form-control-custom-date {
+  width: 100%;
+  padding: 0.65rem 1rem 0.65rem 2.6rem;
+  background-color: #f8fafc;
+  border: 1px solid #dee2e6;
+  border-radius: 0.75rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.25s ease;
+  color: #1e293b;
+  min-height: 42px;
+}
+
+.form-control-custom-date:hover {
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+}
+
+.form-control-custom-date.border-gold {
+  background-color: #ffffff;
+  border-color: var(--primary-gold) !important;
+}
+
+.shadow-gold-sm {
+  box-shadow: 0 8px 20px rgba(188, 145, 81, 0.15) !important;
+}
+
+.select-none {
+  user-select: none;
+}
+
+.calendar-popup {
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.18);
+  min-width: 295px;
+  z-index: 1060;
+}
+
+@media (max-width: 575.98px) {
+  .calendar-popup {
+    min-width: 100%;
+    left: 0 !important;
+    right: 0 !important;
+  }
 }
 </style>

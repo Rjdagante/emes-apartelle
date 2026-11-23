@@ -83,9 +83,14 @@
                 <div class="col-md-8 p-4 d-flex flex-column justify-content-center">
                   <div class="d-flex justify-content-between align-items-start mb-2">
                     <div>
-                      <span class="badge bg-gold-subtle text-gold text-uppercase tracking-widest small fw-bold mb-2 d-inline-block">
-                        {{ booking.room?.room_type || 'Room' }}
-                      </span>
+                      <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                        <span class="badge bg-gold-subtle text-gold text-uppercase tracking-widest small fw-bold">
+                          {{ booking.room?.room_type || 'Room' }}
+                        </span>
+                        <span v-if="booking.package" class="badge bg-warning-subtle text-dark border border-warning-subtle rounded-pill x-small px-2 py-0.5 d-inline-flex align-items-center">
+                          <i class="bi bi-box2-heart-fill text-gold me-1"></i>{{ booking.package.name }}
+                        </span>
+                      </div>
                       <h4 class="serif-font fw-bold mb-1">Room #{{ booking.room?.room_number }}</h4>
                     </div>
                     <div class="text-end">
@@ -107,6 +112,9 @@
                       <small class="text-muted d-block text-uppercase fw-bold x-small">Status</small>
                       <span :class="getStatusBadgeClass(booking.status)">
                         {{ capitalize(booking.status) }}
+                      </span>
+                      <span v-if="booking.payment_status === 'refunded'" class="badge rounded-pill px-2.5 py-1 fw-bold x-small bg-info-subtle text-info border border-info-subtle ms-1" style="font-size: 0.65rem;">
+                        100% Refunded
                       </span>
                     </div>
                     <!-- Cancellation Reason -->
@@ -149,6 +157,19 @@
                             Extend Stay
                         </button>
 
+                        <!-- Reschedule Button -->
+                        <button 
+                            v-if="isReschedulable(booking)" 
+                            @click="handleOpenReschedule(booking)" 
+                            class="btn btn-sm btn-outline-gold rounded-pill px-3 py-1 fw-bold x-small text-uppercase d-inline-flex align-items-center justify-content-center shadow-sm"
+                            :disabled="loading || state.user?.is_suspended"
+                            :title="state.user?.is_suspended ? 'Restricted due to account suspension' : 'Reschedule your booking dates'"
+                            style="font-size: 0.7rem; font-weight: 700; height: 32px;"
+                        >
+                            <i class="bi bi-calendar-range me-1"></i>
+                            Reschedule
+                        </button>
+
                         <!-- Write Review Button -->
                         <button 
                             v-if="booking.status === 'completed' && !booking.review" 
@@ -182,16 +203,16 @@
                             Rebook Now
                         </router-link>
 
-                        <!-- E-Receipt Button -->
+                        <!-- Receipt Button -->
                         <button 
-                            v-if="booking.payment_status === 'paid' || booking.payment_status === 'partially_paid' || ['confirmed', 'checked-in', 'completed'].includes(booking.status)"
+                            v-if="booking.status !== 'cancelled' || booking.payment_status === 'refunded'"
                             @click="handleViewReceipt(booking)" 
                             class="btn btn-sm btn-outline-gold rounded-pill px-3 py-1 fw-bold x-small text-uppercase d-inline-flex align-items-center justify-content-center"
                             style="font-size: 0.7rem; font-weight: 700; height: 32px;"
-                            title="View your official E-Receipt"
+                            title="View your booking receipt"
                         >
                             <i class="bi bi-receipt me-1"></i>
-                            E-Receipt
+                            Receipt
                         </button>
 
                         <!-- File Dispute Button -->
@@ -355,11 +376,211 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- ========== RESCHEDULE BOOKING MODAL ========== -->
+    <Teleport to="body">
+      <div v-if="showRescheduleModal" class="modal-backdrop fade show" style="z-index: 1050;" @click="closeRescheduleModal"></div>
+      <div v-if="showRescheduleModal" class="modal fade show d-block" tabindex="-1" style="z-index: 1055;" @click.self="closeRescheduleModal">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+          <div class="modal-content border-0 rounded-5 overflow-hidden shadow-2xl" style="overflow: visible;">
+            <!-- Modal Header -->
+            <div class="modal-header bg-white border-bottom p-4 d-flex justify-content-between align-items-center">
+              <div>
+                <h3 class="modal-title serif-font text-secondary-dark mb-1">Reschedule Your Booking</h3>
+                <p class="text-muted small mb-0">
+                  <i class="bi bi-door-open text-gold"></i> Room #{{ rescheduleBooking?.room?.room_number }} &middot; {{ rescheduleBooking?.room?.room_type }}
+                </p>
+              </div>
+              <button type="button" class="btn-close bg-light rounded-circle p-2" @click="closeRescheduleModal" aria-label="Close"></button>
+            </div>
+            
+            <!-- Modal Body -->
+            <div class="modal-body bg-cream p-4" style="overflow: visible;">
+              <div v-if="loadingReschedDates" class="text-center py-5">
+                <span class="spinner-border text-gold me-2"></span>
+                <span class="text-muted">Loading room schedule...</span>
+              </div>
+              
+              <div v-else>
+                <!-- Current Booking Info -->
+                <div class="bg-white p-3 rounded-4 border shadow-sm mb-4">
+                  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+                    <div>
+                      <span class="text-muted small fw-bold text-uppercase d-block x-small">Current Schedule</span>
+                      <span class="fw-bold text-secondary-dark">
+                        {{ formatDate(rescheduleBooking?.check_in) }} &mdash; {{ formatDate(rescheduleBooking?.check_out) }}
+                      </span>
+                      <span class="badge bg-light text-secondary border ms-2 small">
+                        {{ reschedOriginalNights }} {{ reschedOriginalNights === 1 ? 'night' : 'nights' }}
+                      </span>
+                    </div>
+                    <div class="text-end">
+                      <span class="text-muted small fw-bold text-uppercase d-block x-small">Amount Paid / Total</span>
+                      <span class="fw-bold text-gold">₱{{ formatPrice(rescheduleBooking?.total_amount) }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="row g-4">
+                  <!-- Date Pickers -->
+                  <div class="col-md-6 position-relative" ref="reschedCheckInWrapper" style="z-index: 1060;">
+                    <label class="form-label small fw-bold text-muted text-uppercase mb-2">New Check-In Date</label>
+                    <div class="input-wrapper-custom cursor-pointer" @click="toggleReschedCheckIn">
+                      <i class="bi bi-calendar-event input-icon-custom"></i>
+                      <div 
+                        class="form-control-custom-date d-flex align-items-center justify-content-between select-none"
+                        :class="{ 'border-gold shadow-gold-sm': showReschedCheckInCalendar }"
+                      >
+                        <span v-if="reschedCheckIn" class="fw-semibold text-secondary-dark">
+                          {{ formatDisplayDate(reschedCheckIn) }}
+                        </span>
+                        <span v-else class="text-muted opacity-75">Select date</span>
+                        <i class="bi bi-chevron-down small text-muted opacity-50 ms-1"></i>
+                      </div>
+                    </div>
+                    <div 
+                      v-if="showReschedCheckInCalendar" 
+                      class="calendar-popup position-absolute start-0 mt-2 animate-fade-in shadow-xl"
+                    >
+                      <CalendarPicker
+                        v-model="reschedCheckIn"
+                        :min-date="todayYMD"
+                        :disabled-dates="reschedBookedDates"
+                        @update:modelValue="onReschedCheckInSelected"
+                      />
+                    </div>
+                  </div>
+
+                  <div class="col-md-6 position-relative" ref="reschedCheckOutWrapper" style="z-index: 1059;">
+                    <label class="form-label small fw-bold text-muted text-uppercase mb-2">New Check-Out Date</label>
+                    <div class="input-wrapper-custom cursor-pointer" @click="toggleReschedCheckOut">
+                      <i class="bi bi-calendar-check input-icon-custom"></i>
+                      <div 
+                        class="form-control-custom-date d-flex align-items-center justify-content-between select-none"
+                        :class="{ 'border-gold shadow-gold-sm': showReschedCheckOutCalendar }"
+                      >
+                        <span v-if="reschedCheckOut" class="fw-semibold text-secondary-dark">
+                          {{ formatDisplayDate(reschedCheckOut) }}
+                        </span>
+                        <span v-else class="text-muted opacity-75">Select date</span>
+                        <i class="bi bi-chevron-down small text-muted opacity-50 ms-1"></i>
+                      </div>
+                    </div>
+                    <div 
+                      v-if="showReschedCheckOutCalendar" 
+                      class="calendar-popup position-absolute end-0 mt-2 animate-fade-in shadow-xl"
+                    >
+                      <CalendarPicker
+                        v-model="reschedCheckOut"
+                        :min-date="reschedCheckIn || todayYMD"
+                        :max-date="reschedMaxCheckOutDate"
+                        :disabled-dates="reschedBookedDates"
+                        :is-checkout="true"
+                        @update:modelValue="onReschedCheckOutSelected"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Price & Breakdown Summary -->
+                <div class="mt-4">
+                  <!-- When dates are chosen and valid -->
+                  <div v-if="reschedCheckIn && reschedCheckOut && reschedNewNights > 0">
+                    <!-- Additional Nights Notice -->
+                    <div v-if="reschedAdditionalAmount > 0" class="alert alert-warning border-0 shadow-sm d-flex align-items-start gap-3 rounded-4 py-3 px-3 mb-3">
+                      <i class="bi bi-exclamation-triangle-fill text-warning fs-5 flex-shrink-0 mt-0.5"></i>
+                      <div class="small leading-relaxed">
+                        <strong class="d-block text-dark">Additional Night(s) Detected</strong>
+                        You are extending your stay by <strong>{{ reschedNewNights - reschedOriginalNights }} extra night(s)</strong>.
+                        The additional balance of <strong class="text-dark">₱{{ formatPrice(reschedAdditionalAmount) }}</strong> will be added to your total amount to be settled at the apartelle.
+                      </div>
+                    </div>
+
+                    <!-- Free Reschedule Notice (Same or fewer nights) -->
+                    <div v-else-if="!isSameAsOriginalDates" class="alert alert-success border-0 shadow-sm d-flex align-items-center gap-3 rounded-4 py-3 px-3 mb-3" style="background-color: #e8f5e9; color: #1b5e20;">
+                      <i class="bi bi-check-circle-fill text-success fs-5 flex-shrink-0"></i>
+                      <div class="small leading-relaxed">
+                        <strong class="d-block text-success-emphasis">Free Rescheduling</strong>
+                        Moving your booking to these dates incurs <strong>no additional charge (₱0.00)</strong>.
+                      </div>
+                    </div>
+
+                    <!-- Same Dates Notice -->
+                    <div v-else class="alert alert-light border shadow-sm d-flex align-items-center gap-2 rounded-4 py-2 px-3 mb-3">
+                      <i class="bi bi-info-circle text-muted"></i>
+                      <span class="small text-muted">Please select different dates above to reschedule your stay.</span>
+                    </div>
+
+                    <!-- Detailed Breakdown Card -->
+                    <div class="bg-white p-3 rounded-4 border shadow-sm">
+                      <div class="d-flex justify-content-between mb-2">
+                        <span class="small text-muted fw-semibold">New Dates:</span>
+                        <span class="small fw-bold text-dark">{{ formatDate(reschedCheckIn) }} &mdash; {{ formatDate(reschedCheckOut) }}</span>
+                      </div>
+                      <div class="d-flex justify-content-between mb-2">
+                        <span class="small text-muted fw-semibold">New Duration:</span>
+                        <span class="small fw-bold text-dark">{{ reschedNewNights }} {{ reschedNewNights === 1 ? 'night' : 'nights' }}</span>
+                      </div>
+                      <div class="d-flex justify-content-between mb-2">
+                        <span class="small text-muted fw-semibold">Original Booking Total:</span>
+                        <span class="small fw-bold text-dark">₱{{ formatPrice(rescheduleBooking?.total_amount) }}</span>
+                      </div>
+                      <div class="d-flex justify-content-between mb-2">
+                        <span class="small text-muted fw-semibold">New Total Amount:</span>
+                        <span class="small fw-bold text-dark">₱{{ formatPrice(Math.max(Number(rescheduleBooking?.total_amount || 0), reschedNewTotalAmount)) }}</span>
+                      </div>
+                      <hr class="my-2">
+                      <div class="d-flex justify-content-between align-items-center">
+                        <span class="small fw-bold text-secondary-dark">Additional Amount to Settle:</span>
+                        <span class="h5 serif-font text-gold fw-bold mb-0">₱{{ formatPrice(reschedAdditionalAmount) }}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Prompt to select dates if not yet selected -->
+                  <div v-else class="text-center py-4 bg-white rounded-4 border text-muted small">
+                    <i class="bi bi-calendar4-week fs-4 text-gold d-block mb-1"></i>
+                    Please pick your new check-in and check-out dates.
+                  </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="mt-4 pt-3 border-top d-flex gap-3">
+                  <button 
+                    type="button" 
+                    class="btn btn-secondary px-4 py-2 rounded-pill flex-grow-1 small text-uppercase fw-bold" 
+                    @click="closeRescheduleModal"
+                    :disabled="submittingReschedule"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="button" 
+                    class="btn btn-gold px-4 py-2 rounded-pill flex-grow-2 w-100 small text-uppercase fw-bold text-white border-0 shadow-sm d-flex align-items-center justify-content-center"
+                    :disabled="submittingReschedule || !reschedCheckIn || !reschedCheckOut || reschedNewNights <= 0 || isSameAsOriginalDates"
+                    @click="confirmReschedule"
+                  >
+                    <span v-if="submittingReschedule" class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                    <i v-else class="bi bi-check2-circle me-1"></i>
+                    <span>Confirm Reschedule</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Modal Footer -->
+            <div class="modal-footer bg-white border-top p-3 d-flex justify-content-center">
+              <span class="x-small text-muted"><i class="bi bi-receipt text-gold me-1"></i> Updated total amount will be reflected on your booking receipt</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import { useAuth } from '../store/auth';
@@ -379,6 +600,132 @@ const newCheckOut = ref('');
 const extendingBookedDates = ref([]);
 const loadingBookedDates = ref(false);
 const submittingExtension = ref(false);
+
+// Reschedule Modal State
+const showRescheduleModal = ref(false);
+const rescheduleBooking = ref(null);
+const reschedCheckIn = ref('');
+const reschedCheckOut = ref('');
+const reschedBookedDates = ref([]);
+const loadingReschedDates = ref(false);
+const submittingReschedule = ref(false);
+const showReschedCheckInCalendar = ref(false);
+const showReschedCheckOutCalendar = ref(false);
+const reschedCheckInWrapper = ref(null);
+const reschedCheckOutWrapper = ref(null);
+
+const getTodayYMD = () => {
+    const today = new Date();
+    const y = today.getFullYear();
+    const m = String(today.getMonth() + 1).padStart(2, '0');
+    const d = String(today.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+};
+const todayYMD = computed(() => getTodayYMD());
+
+const formatToYMD = (date) => {
+    if (!date) return '';
+    const d = new Date(date);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const formatDisplayDate = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr + (dateStr.includes('T') ? '' : 'T00:00:00'));
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+    });
+};
+
+const reschedOriginalNights = computed(() => {
+    if (!rescheduleBooking.value?.check_in || !rescheduleBooking.value?.check_out) return 0;
+    const start = new Date(rescheduleBooking.value.check_in.split(' ')[0] + 'T00:00:00');
+    const end = new Date(rescheduleBooking.value.check_out.split(' ')[0] + 'T00:00:00');
+    return Math.max(0, Math.round((end - start) / (1000 * 60 * 60 * 24)));
+});
+
+const reschedNewNights = computed(() => {
+    if (!reschedCheckIn.value || !reschedCheckOut.value) return 0;
+    const start = new Date(reschedCheckIn.value + 'T00:00:00');
+    const end = new Date(reschedCheckOut.value + 'T00:00:00');
+    return Math.max(0, Math.round((end - start) / (1000 * 60 * 60 * 24)));
+});
+
+const isSameAsOriginalDates = computed(() => {
+    if (!rescheduleBooking.value || !reschedCheckIn.value || !reschedCheckOut.value) return true;
+    const origCheckIn = (rescheduleBooking.value.check_in || '').split(' ')[0] || (rescheduleBooking.value.check_in || '').split('T')[0];
+    const origCheckOut = (rescheduleBooking.value.check_out || '').split(' ')[0] || (rescheduleBooking.value.check_out || '').split('T')[0];
+    return reschedCheckIn.value === origCheckIn && reschedCheckOut.value === origCheckOut;
+});
+
+const reschedMaxCheckOutDate = computed(() => {
+    if (!reschedCheckIn.value || !reschedBookedDates.value.length) return null;
+    const checkInDate = new Date(reschedCheckIn.value + 'T00:00:00');
+    let firstNextDate = null;
+    reschedBookedDates.value.forEach(range => {
+        const startStr = range.start || range.check_in || range.start_date;
+        if (!startStr) return;
+        const start = new Date(startStr.split(' ')[0] + 'T00:00:00');
+        if (start > checkInDate) {
+            if (!firstNextDate || start < new Date(firstNextDate)) {
+                firstNextDate = startStr.split(' ')[0];
+            }
+        }
+    });
+    return firstNextDate;
+});
+
+const reschedNewTotalAmount = computed(() => {
+    if (!rescheduleBooking.value || reschedNewNights.value <= 0) return 0;
+    const room = rescheduleBooking.value.room;
+    if (!room) return 0;
+
+    const isPerHead = room.room_type === 'Family Room' || room.room_type === 'Barkadahan Room';
+    const nightlyRate = isPerHead ? Number(room.price_per_head || 0) : Number(room.price_per_night || 0);
+    const extraBedRate = Number(room.extra_bed_price ?? 300);
+
+    const adults = Number(rescheduleBooking.value.adults ?? rescheduleBooking.value.guests ?? 1);
+    const children = Number(rescheduleBooking.value.children ?? 0);
+    const totalGuests = Math.max(1, adults + children);
+
+    const baseOccupancy = Number(room.base_occupancy || 1);
+    const maxOccupancy = Number(room.max_occupancy || baseOccupancy);
+    const extraGuests = Math.max(0, totalGuests - maxOccupancy);
+    const extraBedCost = extraGuests * extraBedRate * reschedNewNights.value;
+
+    let baseCost = 0;
+    if (isPerHead) {
+        let chargeableGuests = adults;
+        let childrenAges = rescheduleBooking.value.children_ages || [];
+        if (typeof childrenAges === 'string') {
+            try { childrenAges = JSON.parse(childrenAges); } catch (e) { childrenAges = []; }
+        }
+        if (Array.isArray(childrenAges)) {
+            const payingChildren = childrenAges.filter(age => Number(age) >= 7).length;
+            chargeableGuests += payingChildren;
+        } else {
+            chargeableGuests += children;
+        }
+        chargeableGuests = Math.max(1, Math.min(chargeableGuests, maxOccupancy));
+        baseCost = nightlyRate * chargeableGuests * reschedNewNights.value;
+    } else {
+        baseCost = nightlyRate * reschedNewNights.value;
+    }
+
+    return baseCost + extraBedCost;
+});
+
+const reschedAdditionalAmount = computed(() => {
+    if (!rescheduleBooking.value) return 0;
+    const oldTotal = Number(rescheduleBooking.value.total_amount || 0);
+    return Math.max(0, reschedNewTotalAmount.value - oldTotal);
+});
 
 const minExtendCheckout = computed(() => {
     if (!extendingBooking.value) return '';
@@ -420,11 +767,15 @@ const additionalCost = computed(() => {
     
     const isPerHead = room.room_type === 'Family Room' || room.room_type === 'Barkadahan Room';
     const nightlyRate = isPerHead ? (room.price_per_head || 0) : (room.price_per_night || 0);
+    const extraBedRate = Number(room.extra_bed_price ?? 300);
+    const extraGuests = extendingBooking.value.extra_guests || 0;
+    const extraBedCost = extraGuests * extraBedRate * additionalNights.value;
     
-    if (isPerHead) {
-        return nightlyRate * (extendingBooking.value.guests || 1) * additionalNights.value;
-    }
-    return nightlyRate * additionalNights.value;
+    const baseCost = isPerHead 
+        ? nightlyRate * (extendingBooking.value.guests || 1) * additionalNights.value 
+        : nightlyRate * additionalNights.value;
+
+    return baseCost + extraBedCost;
 });
 
 const newTotalAmount = computed(() => {
@@ -517,37 +868,42 @@ const onImageError = (e, roomType) => {
 };
 
 const isCancellable = (booking) => {
-    // Cancellable only within 1 hour of booking
+    if (!booking) return false;
+
+    // Non-cancellable if already cancelled, completed, checked-in, or pending cancellation
+    if (['cancelled', 'completed', 'checked-in', 'cancellation_pending'].includes(booking.status)) return false;
+
+    // Cannot cancel if stay checkout has already passed
+    if (isPast(booking)) return false;
+
+    // Cancel booking button appears only within 1 week (7 days) of booking creation
     if (booking.created_at) {
         const createdAt = new Date(booking.created_at);
         const now = new Date();
-        const diffInHours = (now - createdAt) / (1000 * 60 * 60);
-        if (diffInHours > 1) {
+        const diffInDays = (now - createdAt) / (1000 * 60 * 60 * 24);
+        if (diffInDays > 7) {
             return false;
         }
     }
 
-    if (booking.status === 'pending') return true;
-    
-    if (booking.status === 'confirmed') {
-        const checkInDate = new Date(booking.check_in);
-        const now = new Date();
-        const diffInHours = (checkInDate - now) / (1000 * 60 * 60);
-        return diffInHours > 24; // 24-hour cutoff
-    }
-    
-    return false;
+    // Active bookings can be cancelled
+    return ['confirmed', 'pending'].includes(booking.status);
 };
 
 const handleCancelBooking = async (booking) => {
     let reason = null;
 
     if (booking.status === 'confirmed') {
+        const refundAmount = Number(booking.total_amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const { value: text, isDismissed } = await Swal.fire({
-            title: 'Reason for Cancelling',
+            title: 'Cancel Booking',
             html: `
                 <div class="text-start">
-                    <p class="small text-muted mb-3">Please let us know why you are cancelling your paid reservation. Refund will be processed according to our policy.</p>
+                    <div class="alert alert-success d-flex align-items-center py-2.5 px-3 mb-3 border-0 rounded-3" style="background-color: #e8f5e9; color: #1b5e20;">
+                        <i class="bi bi-shield-check fs-5 me-2 flex-shrink-0"></i>
+                        <span class="small fw-semibold">1-Week Free Cancellation: You are cancelling within the 1-week free cancellation window. You will receive a <strong>100% refund of ₱${refundAmount}</strong>.</span>
+                    </div>
+                    <p class="small text-muted mb-3">Please let us know why you are cancelling your reservation.</p>
                     <div class="mb-3">
                         <label for="swal-cancellation-select" class="form-label small fw-bold text-muted text-uppercase">Cancellation Reason</label>
                         <select id="swal-cancellation-select" class="form-select py-2">
@@ -602,7 +958,7 @@ const handleCancelBooking = async (booking) => {
     } else {
         const result = await Swal.fire({
             title: 'Cancel Reservation?',
-            text: "Are you sure you want to cancel this reservation?",
+            text: "Are you sure you want to cancel this pending reservation?",
             icon: 'warning',
             showCancelButton: true,
             confirmButtonColor: '#dc3545',
@@ -624,9 +980,9 @@ const handleCancelBooking = async (booking) => {
         });
         await Swal.fire({
             icon: 'success',
-            title: 'Cancelled',
-            text: response.data.message || 'Your reservation has been cancelled.',
-            timer: 2000,
+            title: 'Reservation Cancelled',
+            text: response.data.message || 'Your reservation has been cancelled and 100% refunded.',
+            timer: 2500,
             timerProgressBar: true,
             showConfirmButton: false
         });
@@ -689,40 +1045,27 @@ const submitExtension = async () => {
     
     submittingExtension.value = true;
     try {
-        const checkOutWithTime = `${newCheckOut.value}T12:00`;
+        const checkOutWithTime = `${newCheckOut.value}T11:00`;
         const response = await axios.put(`/api/reservations/${extendingBooking.value.id}`, {
             check_out: checkOutWithTime
         });
 
         showExtendModal.value = false;
 
-        if (response.data.checkout_url) {
-            // Redirect to Xendit for payment
-            await Swal.fire({
-                icon: 'info',
-                title: 'Redirecting to Payment',
-                text: 'Please complete the payment for your stay extension.',
-                timer: 2000,
-                timerProgressBar: true,
-                showConfirmButton: false
-            });
-            window.location.href = response.data.checkout_url;
-        } else {
-            await Swal.fire({
-                icon: 'success',
-                title: 'Stay Extended!',
-                html: `
-                    <div class="small text-muted">
-                        Your stay in Room #${extendingBooking.value.room?.room_number} has been extended.<br>
-                        New Checkout: <strong>${formatDate(response.data.check_out)}</strong>.<br>
-                        Total Amount: <strong>₱${formatPrice(response.data.total_amount)}</strong>.<br><br>
-                        <span class="text-danger fw-bold">Please settle the additional amount at the hotel upon checkout.</span>
-                    </div>
-                `,
-                confirmButtonColor: '#BC9151'
-            });
-            await fetchBookings();
-        }
+        await Swal.fire({
+            icon: 'success',
+            title: 'Stay Extended!',
+            html: `
+                <div class="small text-muted">
+                    Your stay in Room #${extendingBooking.value.room?.room_number} has been extended.<br>
+                    New Checkout: <strong>${formatDate(response.data.check_out)}</strong>.<br>
+                    Updated Total Amount: <strong>₱${formatPrice(response.data.total_amount)}</strong>.<br><br>
+                    <span class="text-dark fw-semibold">Please settle the updated amount at the apartelle.</span>
+                </div>
+            `,
+            confirmButtonColor: '#BC9151'
+        });
+        await fetchBookings();
     } catch (error) {
         console.error('Error extending stay:', error);
         Swal.fire({
@@ -732,6 +1075,125 @@ const submitExtension = async () => {
         });
     } finally {
         submittingExtension.value = false;
+    }
+};
+
+const isReschedulable = (booking) => {
+    if (!booking || !booking.check_in) return false;
+    if (!['confirmed', 'pending'].includes(booking.status)) return false;
+    const checkInStr = (booking.check_in || '').split(' ')[0] || (booking.check_in || '').split('T')[0];
+    const todayStr = getTodayYMD();
+    return checkInStr >= todayStr;
+};
+
+const handleOpenReschedule = async (booking) => {
+    rescheduleBooking.value = booking;
+    const origCheckIn = (booking.check_in || '').split(' ')[0] || (booking.check_in || '').split('T')[0];
+    const origCheckOut = (booking.check_out || '').split(' ')[0] || (booking.check_out || '').split('T')[0];
+    reschedCheckIn.value = origCheckIn;
+    reschedCheckOut.value = origCheckOut;
+    reschedBookedDates.value = [];
+    showReschedCheckInCalendar.value = false;
+    showReschedCheckOutCalendar.value = false;
+    loadingReschedDates.value = true;
+    showRescheduleModal.value = true;
+
+    try {
+        const response = await axios.get(`/api/rooms/${booking.room.id}/booked-dates?exclude_reservation_id=${booking.id}`);
+        reschedBookedDates.value = response.data;
+    } catch (error) {
+        console.error('Failed to fetch booked dates for reschedule:', error);
+    } finally {
+        loadingReschedDates.value = false;
+    }
+};
+
+const closeRescheduleModal = () => {
+    showRescheduleModal.value = false;
+    showReschedCheckInCalendar.value = false;
+    showReschedCheckOutCalendar.value = false;
+    rescheduleBooking.value = null;
+    reschedCheckIn.value = '';
+    reschedCheckOut.value = '';
+    reschedBookedDates.value = [];
+};
+
+const toggleReschedCheckIn = () => {
+    showReschedCheckInCalendar.value = !showReschedCheckInCalendar.value;
+    if (showReschedCheckInCalendar.value) {
+        showReschedCheckOutCalendar.value = false;
+    }
+};
+
+const toggleReschedCheckOut = () => {
+    showReschedCheckOutCalendar.value = !showReschedCheckOutCalendar.value;
+    if (showReschedCheckOutCalendar.value) {
+        showReschedCheckInCalendar.value = false;
+    }
+};
+
+const onReschedCheckInSelected = (val) => {
+    showReschedCheckInCalendar.value = false;
+    if (!reschedCheckOut.value || reschedCheckOut.value <= val) {
+        const nextDay = new Date(val + 'T00:00:00');
+        nextDay.setDate(nextDay.getDate() + (reschedOriginalNights.value || 1));
+        let newOut = formatToYMD(nextDay);
+        if (reschedMaxCheckOutDate.value && newOut > reschedMaxCheckOutDate.value) {
+            newOut = reschedMaxCheckOutDate.value;
+        }
+        reschedCheckOut.value = newOut;
+        showReschedCheckOutCalendar.value = true;
+    }
+};
+
+const onReschedCheckOutSelected = () => {
+    showReschedCheckOutCalendar.value = false;
+};
+
+const handleReschedClickOutside = (e) => {
+    if (reschedCheckInWrapper.value && !reschedCheckInWrapper.value.contains(e.target)) {
+        showReschedCheckInCalendar.value = false;
+    }
+    if (reschedCheckOutWrapper.value && !reschedCheckOutWrapper.value.contains(e.target)) {
+        showReschedCheckOutCalendar.value = false;
+    }
+};
+
+const confirmReschedule = async () => {
+    if (!reschedCheckIn.value || !reschedCheckOut.value || reschedNewNights.value <= 0 || isSameAsOriginalDates.value) return;
+
+    submittingReschedule.value = true;
+    try {
+        const response = await axios.post(`/api/reservations/${rescheduleBooking.value.id}/reschedule`, {
+            check_in: reschedCheckIn.value,
+            check_out: reschedCheckOut.value
+        });
+
+        showRescheduleModal.value = false;
+
+        const updatedTotal = response.data?.reservation?.total_amount ?? rescheduleBooking.value?.total_amount;
+        await Swal.fire({
+            icon: 'success',
+            title: 'Booking Rescheduled!',
+            html: `
+                <div class="small text-muted">
+                    Your booking for Room #${rescheduleBooking.value.room?.room_number} has been updated.<br>
+                    New Dates: <strong>${formatDate(reschedCheckIn.value)} &mdash; ${formatDate(reschedCheckOut.value)}</strong> (${reschedNewNights.value} nights).<br>
+                    Total Amount: <strong>₱${formatPrice(updatedTotal)}</strong>
+                </div>
+            `,
+            confirmButtonColor: '#BC9151'
+        });
+        await fetchBookings();
+    } catch (error) {
+        console.error('Error rescheduling booking:', error);
+        Swal.fire({
+            icon: 'error',
+            title: 'Reschedule Failed',
+            text: error.response?.data?.message || 'Could not reschedule booking. Please select different dates or contact support.'
+        });
+    } finally {
+        submittingReschedule.value = false;
     }
 };
 
@@ -889,19 +1351,38 @@ const handleViewReceipt = (booking) => {
     const checkOutDate = new Date(booking.check_out);
     const totalNights = Math.max(1, Math.round((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24)));
     
-    // Status Badge Class
+    // Status Badge Class & Label
     let badgeClass = 'bg-secondary text-white';
+    let badgeLabel = 'PAY AT HOTEL';
     const paymentStatus = booking.payment_status?.toLowerCase() || 'unpaid';
-    if (paymentStatus === 'paid') badgeClass = 'bg-success text-white';
-    else if (paymentStatus === 'partially_paid') badgeClass = 'bg-warning text-dark';
-    else if (paymentStatus === 'unpaid') badgeClass = 'bg-warning text-dark';
-    else if (paymentStatus === 'refunded') badgeClass = 'bg-info text-white';
+    if (paymentStatus === 'paid') {
+        badgeClass = 'bg-success text-white';
+        badgeLabel = 'PAID';
+    } else if (paymentStatus === 'partially_paid') {
+        badgeClass = 'bg-warning text-dark';
+        badgeLabel = 'PARTIALLY PAID';
+    } else if (paymentStatus === 'unpaid') {
+        badgeClass = 'bg-warning-subtle text-dark border border-warning-subtle';
+        badgeLabel = 'PAY AT HOTEL';
+    } else if (paymentStatus === 'refunded') {
+        badgeClass = 'bg-info text-white';
+        badgeLabel = 'REFUNDED';
+    }
 
     const formattedCheckIn = formatDate(booking.check_in);
     const formattedCheckOut = formatDate(booking.check_out);
     const formattedCreated = formatDate(booking.created_at || new Date());
     const receiptNo = `#EME-${String(booking.id).padStart(5, '0')}`;
     
+    const adults = booking.adults || booking.guests || 1;
+    const children = booking.children || 0;
+    const childrenAges = Array.isArray(booking.children_ages) 
+        ? booking.children_ages 
+        : (typeof booking.children_ages === 'string' ? JSON.parse(booking.children_ages || '[]') : []);
+    const freeChildren = childrenAges.filter(a => Number(a) < 7).length;
+    const payingChildren = childrenAges.filter(a => Number(a) >= 7).length;
+    const chargeableGuests = adults + payingChildren;
+
     const isPerHead = booking.room?.room_type === 'Family Room' || booking.room?.room_type === 'Barkadahan Room';
     const nightlyRate = isPerHead ? (booking.room?.price_per_head || 0) : (booking.room?.price_per_night || 0);
     const subtotal = booking.total_amount || 0;
@@ -922,8 +1403,9 @@ const handleViewReceipt = (booking) => {
             <span class="total-amount text-gold serif-font h3 fw-bold mb-0" style="font-size: 1.5rem;">₱${formatPrice(paidAmount)}</span>
         `;
     } else {
+        const totalLabel = paymentStatus === 'paid' ? 'Total Amount Paid' : 'Total Amount Due';
         totalPaidHtml = `
-            <span class="total-label serif-font h5 fw-bold text-dark mb-0" style="font-size: 0.95rem;">Total Amount Paid</span>
+            <span class="total-label serif-font h5 fw-bold text-dark mb-0" style="font-size: 0.95rem;">${totalLabel}</span>
             <span class="total-amount text-gold serif-font h3 fw-bold mb-0" style="font-size: 1.5rem;">₱${formatPrice(subtotal)}</span>
         `;
     }
@@ -937,11 +1419,11 @@ const handleViewReceipt = (booking) => {
                     <div class="d-flex justify-content-between align-items-start">
                         <div>
                             <h4 class="serif-font fw-bold text-gold mb-0" style="font-size: 1.5rem;">EME's Apartelle</h4>
-                            <span class="receipt-subtitle">Official E-Receipt</span>
+                            <span class="receipt-subtitle">Booking Receipt</span>
                         </div>
                         <div class="text-end">
                             <span class="badge ${badgeClass} px-3 py-1 rounded-pill fw-bold small">
-                                ${paymentStatus.replace('_', ' ').toUpperCase()}
+                                ${badgeLabel}
                             </span>
                         </div>
                     </div>
@@ -965,7 +1447,7 @@ const handleViewReceipt = (booking) => {
                         <div class="row g-2">
                             <div class="col-6">
                                 <span class="field-label">Name</span>
-                                <span class="field-value">${state.user?.name || 'Guest'}</span>
+                                <span class="field-value">${booking.guest_name || state.user?.name || 'Guest'}</span>
                             </div>
                             <div class="col-6 text-end">
                                 <span class="field-label">Email</span>
@@ -988,11 +1470,11 @@ const handleViewReceipt = (booking) => {
                             </div>
                             <div class="col-6">
                                 <span class="field-label">Check-In</span>
-                                <span class="field-value">${formattedCheckIn} (12:00 PM)</span>
+                                <span class="field-value">${formattedCheckIn} (1:00 PM)</span>
                             </div>
                             <div class="col-6 text-end">
                                 <span class="field-label">Check-Out</span>
-                                <span class="field-value">${formattedCheckOut} (12:00 PM)</span>
+                                <span class="field-value">${formattedCheckOut} (11:00 AM)</span>
                             </div>
                         </div>
                     </div>
@@ -1007,17 +1489,23 @@ const handleViewReceipt = (booking) => {
                         ${isPerHead ? `
                         <div class="price-row d-flex justify-content-between mb-2">
                             <span class="price-label">Guests</span>
-                            <span class="price-val">${booking.guests || 1} Guest${(booking.guests || 1) > 1 ? 's' : ''}</span>
+                            <span class="price-val">${booking.guests || 1} Guest${(booking.guests || 1) > 1 ? 's' : ''} (${adults} Adult${adults > 1 ? 's' : ''}${children > 0 ? `, ${children} Child${children > 1 ? 'ren' : ''}` : ''})</span>
                         </div>
                         ` : ''}
                         <div class="price-row d-flex justify-content-between mb-2">
                             <span class="price-label">Nights</span>
                             <span class="price-val">${totalNights} Night${totalNights > 1 ? 's' : ''}</span>
                         </div>
+                        ${(booking.extra_guests > 0 || booking.extra_bed_charge > 0) ? `
+                        <div class="price-row d-flex justify-content-between mb-2 text-gold">
+                            <span class="price-label">Additional Beddings (${booking.extra_guests} guest${booking.extra_guests > 1 ? 's' : ''})</span>
+                            <span class="price-val fw-bold">+₱${formatPrice(booking.extra_bed_charge || (booking.extra_guests * (booking.room?.extra_bed_price || 300) * totalNights))}</span>
+                        </div>
+                        ` : ''}
                         <div class="price-row d-flex justify-content-between mb-2 border-top border-light pt-2">
                             <span class="price-label">Breakdown</span>
                             <span class="price-val text-muted small" style="font-style: italic;">
-                                ${isPerHead ? `((₱${formatPrice(nightlyRate)} × ${booking.guests || 1} guests) × ${totalNights} nights)` : `(₱${formatPrice(nightlyRate)} × ${totalNights} nights)`}
+                                ${isPerHead ? `((₱${formatPrice(nightlyRate)} × ${chargeableGuests} paying guests) × ${totalNights} nights)${freeChildren > 0 ? ` + ${freeChildren} Child Free` : ''}` : `(₱${formatPrice(nightlyRate)} × ${totalNights} nights)`}
                             </span>
                         </div>
                         <div class="price-row d-flex justify-content-between mb-2">
@@ -1175,10 +1663,15 @@ const autoSyncPendingPayments = async (reservationList) => {
 };
 
 onMounted(async () => {
+    document.addEventListener('click', handleReschedClickOutside);
     await fetchBookings();
     // Auto-sync any reservations that returned from a Xendit payment
     // but whose webhook hasn't fired yet (common on localhost)
     await autoSyncPendingPayments(bookings.value);
+});
+
+onUnmounted(() => {
+    document.removeEventListener('click', handleReschedClickOutside);
 });
 </script>
 
@@ -1232,5 +1725,66 @@ onMounted(async () => {
 @keyframes shimmer-sweep {
     0% { transform: translateX(-100%); }
     100% { transform: translateX(100%); }
+}
+
+/* ========== RESCHEDULE DATE PICKER STYLES ========== */
+.input-wrapper-custom {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.input-icon-custom {
+    position: absolute;
+    left: 1rem;
+    color: #bc9151;
+    font-size: 1.05rem;
+    pointer-events: none;
+    z-index: 2;
+}
+
+.form-control-custom-date {
+    width: 100%;
+    padding: 0.65rem 1rem 0.65rem 2.6rem;
+    background-color: #ffffff;
+    border: 1px solid #dee2e6;
+    border-radius: 0.75rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.25s ease;
+    color: #1e293b;
+    min-height: 42px;
+}
+
+.form-control-custom-date:hover {
+    background-color: #ffffff;
+    border-color: #cbd5e1;
+}
+
+.form-control-custom-date.border-gold {
+    background-color: #ffffff;
+    border-color: #bc9151 !important;
+}
+
+.shadow-gold-sm {
+    box-shadow: 0 8px 20px rgba(188, 145, 81, 0.15) !important;
+}
+
+.select-none {
+    user-select: none;
+}
+
+.calendar-popup {
+    box-shadow: 0 20px 45px rgba(0, 0, 0, 0.18);
+    min-width: 295px;
+    z-index: 1060;
+}
+
+@media (max-width: 575.98px) {
+    .calendar-popup {
+        min-width: 100%;
+        left: 0 !important;
+        right: 0 !important;
+    }
 }
 </style>

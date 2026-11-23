@@ -31,6 +31,7 @@ const AdminMessages = () => import('../views/admin/MessagesView.vue');
 const AdminChatbot = () => import('../views/admin/ChatbotView.vue');
 const AdminReports = () => import('../views/admin/ReportsView.vue');
 const AdminDisputes = () => import('../views/admin/DisputesView.vue');
+const AdminAuditLogs = () => import('../views/admin/AuditLogsView.vue');
 
 const routes = [
     {
@@ -131,6 +132,7 @@ const routes = [
             { path: 'messages', name: 'admin-messages', component: AdminMessages },
             { path: 'chatbot', name: 'admin-chatbot', component: AdminChatbot },
             { path: 'disputes', name: 'admin-disputes', component: AdminDisputes },
+            { path: 'audit-logs', name: 'admin-audit-logs', component: AdminAuditLogs, meta: { requiresAdminOnly: true } },
         ]
     }
 ];
@@ -152,6 +154,9 @@ router.beforeEach((to, from, next) => {
         }
         if (user && !['admin', 'staff'].includes(user.role)) {
             return next({ name: 'rooms' }); // Redirect regular users to rooms
+        }
+        if (to.meta.requiresAdminOnly && user?.role !== 'admin') {
+            return next({ name: 'admin-dashboard' });
         }
     }
 

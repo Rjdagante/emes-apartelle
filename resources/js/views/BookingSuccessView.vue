@@ -7,74 +7,57 @@
         <div class="spinner-border text-gold" role="status" style="width: 3rem; height: 3rem;">
           <span class="visually-hidden">Loading...</span>
         </div>
-        <p class="mt-3 text-muted fw-bold">Verifying your payment...</p>
+        <p class="mt-3 text-muted fw-bold">Loading your booking receipt...</p>
       </div>
 
       <!-- Success Content Grid -->
       <div v-else class="row g-4 justify-content-center align-items-stretch">
         
-        <!-- Left Column: Success Confirmation Card -->
+        <!-- Left Column: Confirmation Card -->
         <div :class="reservation ? 'col-lg-5 col-md-6 d-flex' : 'col-md-8 col-lg-6 d-flex'">
           <div class="result-card animate-fade-up w-100 d-flex flex-column justify-content-between">
             <div class="flex-grow-1 d-flex flex-column justify-content-center">
-              <!-- Confirmed State -->
-              <template v-if="isPaymentConfirmed">
-                <div class="result-icon success">
-                  <i class="bi bi-check-lg"></i>
-                </div>
-                <h1 class="result-title serif-font">Booking Confirmed!</h1>
-                <p class="result-message mb-4">
-                  Thank you for choosing EME's Apartelle. Your reservation has been successfully confirmed.<br>
-                  A confirmation email will be sent to you shortly with all the details.
-                </p>
-              </template>
+              <div class="result-icon success">
+                <i class="bi bi-check-lg"></i>
+              </div>
+              <h1 class="result-title serif-font">
+                {{ reservation?.status === 'confirmed' ? 'Booking Confirmed!' : 'Reservation Received!' }}
+              </h1>
+              <p class="result-message mb-4">
+                Thank you for choosing EME's Apartelle. Your reservation has been recorded.<br>
+                <span v-if="!isPaid">
+                  Please save or print your receipt and settle the total amount at the front desk upon check-in.
+                </span>
+                <span v-else>
+                  Your payment has been settled. We look forward to welcoming you.
+                </span>
+              </p>
 
-              <!-- Syncing State -->
-              <template v-else-if="syncState === 'syncing'">
-                <div class="result-icon syncing">
-                  <div class="spinner-border text-gold" role="status" style="width: 2.5rem; height: 2.5rem;">
-                    <span class="visually-hidden">Syncing...</span>
-                  </div>
-                </div>
-                <h1 class="result-title serif-font" style="font-size: 1.8rem;">Verifying Payment...</h1>
-                <p class="result-message mb-4">
-                  We're confirming your payment with our payment provider. 
-                  This usually takes a few seconds.<br>
-                  <small class="text-muted">Attempt {{ syncAttempts }} of {{ maxSyncAttempts }}</small>
-                </p>
-              </template>
-
-              <!-- Sync Failed / Pending State -->
-              <template v-else>
-                <div class="result-icon pending">
-                  <i class="bi bi-clock-history"></i>
-                </div>
-                <h1 class="result-title serif-font" style="font-size: 1.8rem;">Booking Received</h1>
-                <p class="result-message mb-3">
-                  Your reservation has been created. We couldn't automatically verify the payment right now — 
-                  this can happen if the payment is still being processed.
-                </p>
-                <button @click="retrySync" class="btn btn-gold rounded-pill px-4 py-2 fw-bold text-uppercase small mx-auto d-flex align-items-center gap-2 mb-3" :disabled="syncState === 'syncing'">
-                  <i class="bi bi-arrow-repeat"></i> Retry Payment Verification
-                </button>
-                <p class="small text-muted text-center mb-0">
-                  Don't worry — if you've already paid, the admin will confirm your booking shortly.
-                </p>
-              </template>
+              <div v-if="reservation" class="total-pill mx-auto mb-4 px-4 py-3 rounded-4">
+                <span class="d-block text-uppercase fw-bold meta-label mb-1">
+                  {{ isPaid ? 'Total Amount Paid' : 'Total Amount Due' }}
+                </span>
+                <span class="serif-font fw-bold text-gold" style="font-size: 1.75rem;">
+                  ₱{{ formatPrice(reservation.total_amount) }}
+                </span>
+              </div>
             </div>
             
             <div class="result-actions pt-4 border-top mt-auto">
-              <router-link to="/" class="btn btn-outline-dark-custom rounded-pill w-100 mb-2.5 py-3 fw-bold text-uppercase small d-flex align-items-center justify-content-center gap-2">
-                <i class="bi bi-house"></i> Go to Home
+              <router-link to="/my-bookings" class="btn btn-gold rounded-pill w-100 py-3 fw-bold text-uppercase text-white border-0 shadow-sm d-flex align-items-center justify-content-center gap-2">
+                <i class="bi bi-journal-check"></i> View My Bookings
               </router-link>
-              <router-link to="/rooms" class="btn btn-gold rounded-pill w-100 py-3 fw-bold text-uppercase text-white border-0 shadow-sm d-flex align-items-center justify-content-center gap-2">
+              <router-link to="/rooms" class="btn btn-outline-dark-custom rounded-pill w-100 py-3 fw-bold text-uppercase small d-flex align-items-center justify-content-center gap-2">
                 <i class="bi bi-calendar-plus"></i> Book Another Room
+              </router-link>
+              <router-link to="/" class="btn btn-link text-muted text-decoration-none fw-semibold small py-1">
+                Back to Home
               </router-link>
             </div>
           </div>
         </div>
 
-        <!-- Right Column: Premium E-Receipt Card -->
+        <!-- Right Column: Booking Receipt Card -->
         <div v-if="reservation" class="col-lg-6 col-md-6 d-flex">
           <div class="receipt-card animate-fade-up delay-1 w-100 d-flex flex-column justify-content-between">
             <div>
@@ -83,11 +66,11 @@
                 <div class="d-flex justify-content-between align-items-start">
                   <div>
                     <h4 class="serif-font fw-bold text-gold mb-0">EME's Apartelle</h4>
-                    <span class="receipt-subtitle">Official E-Receipt</span>
+                    <span class="receipt-subtitle">Booking Receipt</span>
                   </div>
                   <div class="text-end">
-                    <span class="badge" :class="getPaymentBadgeClass(reservation.payment_status)">
-                      {{ reservation.payment_status?.toUpperCase() }}
+                    <span class="badge px-3 py-2 rounded-pill" :class="getPaymentBadgeClass(reservation.payment_status)">
+                      {{ formatPaymentStatus(reservation.payment_status) }}
                     </span>
                   </div>
                 </div>
@@ -111,7 +94,7 @@
                   <div class="row g-2">
                     <div class="col-6">
                       <span class="field-label">Name</span>
-                      <span class="field-value">{{ reservation.user?.name || 'Guest' }}</span>
+                      <span class="field-value">{{ reservation.guest_name || reservation.user?.name || 'Guest' }}</span>
                     </div>
                     <div class="col-6 text-end" v-if="reservation.user?.email">
                       <span class="field-label">Email</span>
@@ -125,43 +108,77 @@
                   <h6 class="section-title"><i class="bi bi-key me-1.5 text-gold"></i> Booking Details</h6>
                   <div class="row g-3">
                     <div class="col-6">
-                      <span class="field-label">Room Type & Number</span>
+                      <span class="field-label">Room Type &amp; Number</span>
                       <span class="field-value fw-bold">Room #{{ reservation.room?.room_number }} ({{ reservation.room?.room_type }})</span>
                     </div>
                     <div class="col-6 text-end">
-                      <span class="field-label">Nights</span>
+                      <span class="field-label">Stay Duration</span>
                       <span class="field-value">{{ totalNights }} Night{{ totalNights > 1 ? 's' : '' }}</span>
+                    </div>
+                    <div class="col-6" v-if="reservation.package">
+                      <span class="field-label">Tour Package</span>
+                      <span class="field-value fw-bold text-gold">{{ reservation.package.name }}</span>
+                    </div>
+                    <div class="col-6" :class="reservation.package ? 'text-end' : ''">
+                      <span class="field-label">Guests</span>
+                      <span class="field-value">
+                        {{ guestSummary }}
+                      </span>
                     </div>
                     <div class="col-6">
                       <span class="field-label">Check-In</span>
-                      <span class="field-value">{{ formatDate(reservation.check_in) }} (12:00 PM)</span>
+                      <span class="field-value">{{ formatDate(reservation.check_in) }} (1:00 PM)</span>
                     </div>
                     <div class="col-6 text-end">
                       <span class="field-label">Check-Out</span>
-                      <span class="field-value">{{ formatDate(reservation.check_out) }} (12:00 PM)</span>
+                      <span class="field-value">{{ formatDate(reservation.check_out) }} (11:00 AM)</span>
                     </div>
                   </div>
                 </div>
 
                 <!-- Financial Breakdown -->
                 <div class="receipt-section mt-4 pt-3 border-top border-dashed">
-                  <h6 class="section-title"><i class="bi bi-receipt me-1.5 text-gold"></i> Charges Details</h6>
-                  <div class="price-row d-flex justify-content-between mb-2">
-                    <template v-if="reservation.room?.room_type === 'Family Room' || reservation.room?.room_type === 'Barkadahan Room'">
-                      <span class="price-label">Room Rate ({{ totalNights }} Night{{ totalNights > 1 ? 's' : '' }} × {{ reservation.guests || 1 }} Guest{{ (reservation.guests || 1) > 1 ? 's' : '' }})</span>
-                      <span class="price-val">₱{{ formatPrice(reservation.room?.price_per_head) }} / head / night</span>
-                    </template>
-                    <template v-else>
+                  <h6 class="section-title"><i class="bi bi-receipt me-1.5 text-gold"></i> Charges Summary</h6>
+                  
+                  <template v-if="reservation.package">
+                    <div class="price-row d-flex justify-content-between mb-2">
+                      <span class="price-label">Package Rate ({{ reservation.package.name }})</span>
+                      <span class="price-val">₱{{ formatPrice(reservation.package.price) }}</span>
+                    </div>
+                  </template>
+                  <template v-else-if="isPerHeadRoom">
+                    <div class="price-row d-flex justify-content-between mb-2">
+                      <span class="price-label">
+                        Room Rate ({{ totalNights }} Night{{ totalNights > 1 ? 's' : '' }} &times; {{ chargeableGuests }} Paying Guest{{ chargeableGuests > 1 ? 's' : '' }})
+                      </span>
+                      <span class="price-val">₱{{ formatPrice(effectiveRate) }} / head / night</span>
+                    </div>
+                    <div v-if="freeChildren > 0" class="price-row d-flex justify-content-between mb-2 text-success">
+                      <span class="price-label text-success">Children under 7 ({{ freeChildren }})</span>
+                      <span class="price-val fw-bold text-success">FREE (₱0)</span>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <div class="price-row d-flex justify-content-between mb-2">
                       <span class="price-label">Room Rate ({{ totalNights }} Night{{ totalNights > 1 ? 's' : '' }})</span>
-                      <span class="price-val">₱{{ formatPrice(reservation.room?.price_per_night) }} / night</span>
-                    </template>
+                      <span class="price-val">₱{{ formatPrice(effectiveRate) }} / night</span>
+                    </div>
+                  </template>
+
+                  <div v-if="reservation.extra_guests > 0 || Number(reservation.extra_bed_charge) > 0" class="price-row d-flex justify-content-between mb-2 text-gold">
+                    <span class="price-label">
+                      <i class="bi bi-plus-circle me-1"></i>
+                      Additional Beddings ({{ reservation.extra_guests }} extra bed{{ reservation.extra_guests > 1 ? 's' : '' }})
+                    </span>
+                    <span class="price-val fw-bold">+₱{{ formatPrice(reservation.extra_bed_charge || (reservation.extra_guests * (reservation.room?.extra_bed_price || 300) * totalNights)) }}</span>
                   </div>
-                  <div class="price-row d-flex justify-content-between mb-2">
+
+                  <div class="price-row d-flex justify-content-between mb-2 pt-2 border-top border-light">
                     <span class="price-label">Subtotal</span>
                     <span class="price-val">₱{{ formatPrice(reservation.total_amount) }}</span>
                   </div>
                   <div class="price-row d-flex justify-content-between text-success">
-                    <span class="price-label">Taxes & Service Fees</span>
+                    <span class="price-label">Taxes &amp; Service Fees</span>
                     <span class="price-val fw-bold">INCLUDED</span>
                   </div>
                 </div>
@@ -170,27 +187,26 @@
 
             <!-- Receipt Footer / Total -->
             <div class="receipt-footer mt-4 pt-3 border-top border-3">
-              <div v-if="reservation.payment_option === 'half'" class="d-flex justify-content-between align-items-center mb-2">
-                <span class="small fw-semibold text-muted mb-0">Total Room Rate</span>
-                <span class="fw-bold text-dark mb-0">₱{{ formatPrice(reservation.total_amount) }}</span>
-              </div>
-              <div v-if="reservation.payment_option === 'half'" class="d-flex justify-content-between align-items-center mb-2 text-muted">
-                <span class="small fw-semibold mb-0">Remaining Balance (Pay at Hotel)</span>
-                <span class="fw-bold mb-0">₱{{ formatPrice(reservation.total_amount / 2) }}</span>
-              </div>
-              <div class="d-flex justify-content-between align-items-center mb-4 pt-2" :class="reservation.payment_option === 'half' ? 'border-top border-dashed' : ''">
+              <div class="d-flex justify-content-between align-items-center mb-2 pt-1">
                 <span class="total-label serif-font h5 fw-bold text-dark mb-0">
-                  {{ reservation.payment_option === 'half' ? 'Amount Paid (Downpayment)' : 'Total Amount Paid' }}
+                  {{ isPaid ? 'Total Amount Paid' : 'Total Amount Due' }}
                 </span>
                 <span class="total-amount text-gold serif-font h3 fw-bold mb-0">
-                  ₱{{ formatPrice(reservation.payment_option === 'half' ? reservation.downpayment_amount : reservation.total_amount) }}
+                  ₱{{ formatPrice(reservation.total_amount) }}
                 </span>
               </div>
+              <p v-if="!isPaid" class="small text-muted mb-3">
+                Payment is settled at the front desk upon check-in.
+              </p>
+
               <div class="text-center pt-2">
-                <p class="receipt-thankyou mb-3 italic-text">Thank you for staying at EME's Apartelle!</p>
-                <div class="d-flex gap-2 justify-content-center no-print">
+                <p class="receipt-thankyou mb-3 italic-text">Thank you for choosing EME's Apartelle!</p>
+                <div class="d-flex gap-2 justify-content-center flex-wrap no-print">
                   <button @click="printReceipt" class="btn btn-sm btn-outline-dark-custom rounded-pill px-4 py-2 fw-bold small d-flex align-items-center gap-2 transition-all">
-                    <i class="bi bi-printer"></i> Print E-Receipt
+                    <i class="bi bi-printer"></i> Print Receipt
+                  </button>
+                  <button @click="downloadPdf" class="btn btn-sm btn-gold rounded-pill px-4 py-2 fw-bold small text-white border-0 d-flex align-items-center gap-2 transition-all">
+                    <i class="bi bi-file-earmark-pdf"></i> Download PDF
                   </button>
                 </div>
               </div>
@@ -203,7 +219,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
 
@@ -211,17 +227,6 @@ const route = useRoute();
 const reservation = ref(null);
 const loading = ref(true);
 
-// Sync state tracking: 'idle' | 'syncing' | 'synced' | 'failed'
-const syncState = ref('idle');
-const syncAttempts = ref(0);
-const maxSyncAttempts = 8;
-let syncTimer = null;
-
-/**
- * Ensure the auth token from localStorage is set on axios headers.
- * After a full-page redirect from Xendit, the SPA re-initializes and the
- * auth store module may not have run yet when this component mounts.
- */
 const ensureAuthToken = () => {
   const token = localStorage.getItem('token');
   if (token && !axios.defaults.headers.common['Authorization']) {
@@ -239,95 +244,63 @@ const fetchReservation = async (resId) => {
   }
 };
 
-/**
- * Attempt to sync payment with Xendit and verify the result.
- * Returns true if payment is confirmed (paid/partially_paid), false otherwise.
- */
-const attemptSync = async (resId) => {
-  ensureAuthToken();
-  try {
-    await axios.post(`/api/reservations/${resId}/sync-payment`);
-  } catch (error) {
-    console.warn(`Sync attempt ${syncAttempts.value} failed:`, error?.response?.status || error.message);
-  }
-
-  // Regardless of sync result, fetch the reservation to check current status
-  await fetchReservation(resId);
-
-  const status = reservation.value?.payment_status;
-  return status === 'paid' || status === 'partially_paid';
-};
-
-/**
- * Retry sync with exponential backoff.
- * Starts at 2s, then 3s, 4s, 5s, etc.
- */
-const syncWithRetry = async (resId) => {
-  syncState.value = 'syncing';
-  syncAttempts.value = 0;
-
-  // First attempt immediately
-  syncAttempts.value++;
-  const confirmed = await attemptSync(resId);
-  if (confirmed) {
-    syncState.value = 'synced';
-    return;
-  }
-
-  // Schedule retries with backoff
-  const scheduleRetry = () => {
-    if (syncAttempts.value >= maxSyncAttempts) {
-      syncState.value = 'failed';
-      return;
-    }
-
-    const delay = (syncAttempts.value + 1) * 1500; // 3s, 4.5s, 6s, ...
-    syncTimer = setTimeout(async () => {
-      syncAttempts.value++;
-      const ok = await attemptSync(resId);
-      if (ok) {
-        syncState.value = 'synced';
-      } else {
-        scheduleRetry();
-      }
-    }, delay);
-  };
-
-  scheduleRetry();
-};
-
-/** Manual retry button handler */
-const retrySync = () => {
-  const resId = route.query.res_id;
-  if (resId) {
-    syncWithRetry(resId);
-  }
-};
-
 onMounted(async () => {
   ensureAuthToken();
   const resId = route.query.res_id;
   if (resId) {
     loading.value = true;
-
-    // Start sync with retry logic
-    await syncWithRetry(resId);
-
-    // If first sync already got the data, loading is done
-    // If retries are still running, we at least show what we have
+    await fetchReservation(resId);
     loading.value = false;
   } else {
     loading.value = false;
   }
 });
 
-onUnmounted(() => {
-  if (syncTimer) clearTimeout(syncTimer);
+const isPaid = computed(() => reservation.value?.payment_status === 'paid');
+
+const isPerHeadRoom = computed(() => {
+  const type = reservation.value?.room?.room_type;
+  return type === 'Family Room' || type === 'Barkadahan Room';
 });
 
-const isPaymentConfirmed = computed(() => {
-  const status = reservation.value?.payment_status;
-  return status === 'paid' || status === 'partially_paid';
+const childrenAges = computed(() => {
+  const raw = reservation.value?.children_ages;
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw) || []; } catch { return []; }
+  }
+  return [];
+});
+
+const freeChildren = computed(() => childrenAges.value.filter(a => Number(a) < 7).length);
+const payingChildren = computed(() => childrenAges.value.filter(a => Number(a) >= 7).length);
+
+const chargeableGuests = computed(() => {
+  const adults = Number(reservation.value?.adults ?? reservation.value?.guests ?? 1);
+  return Math.max(1, adults + payingChildren.value);
+});
+
+const guestSummary = computed(() => {
+  const adults = Number(reservation.value?.adults ?? reservation.value?.guests ?? 1);
+  const children = Number(reservation.value?.children ?? 0);
+  let text = `${adults} Adult${adults > 1 ? 's' : ''}`;
+  if (children > 0) {
+    text += `, ${children} Child${children > 1 ? 'ren' : ''}`;
+  }
+  return text;
+});
+
+const effectiveRate = computed(() => {
+  const room = reservation.value?.room;
+  if (!room) return 0;
+  if (isPerHeadRoom.value) {
+    return (room.is_promo && Number(room.promo_price_per_head) > 0)
+      ? Number(room.promo_price_per_head)
+      : Number(room.price_per_head || 0);
+  }
+  return (room.is_promo && Number(room.promo_price) > 0)
+    ? Number(room.promo_price)
+    : Number(room.price_per_night || 0);
 });
 
 const totalNights = computed(() => {
@@ -335,8 +308,8 @@ const totalNights = computed(() => {
   const start = new Date(reservation.value.check_in);
   const end = new Date(reservation.value.check_out);
   const diff = end - start;
-  const nights = diff / (1000 * 60 * 60 * 24);
-  return nights > 0 ? nights : 0;
+  const nights = Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+  return nights > 0 ? nights : 1;
 });
 
 const formatDate = (dateString) => {
@@ -352,6 +325,20 @@ const formatPrice = (price) => {
   return parseFloat(price || 0).toLocaleString();
 };
 
+const formatPaymentStatus = (paymentStatus) => {
+  switch (paymentStatus?.toLowerCase()) {
+    case 'paid':
+      return 'PAID';
+    case 'partially_paid':
+      return 'PARTIALLY PAID';
+    case 'refunded':
+      return 'REFUNDED';
+    case 'unpaid':
+    default:
+      return 'PAY AT HOTEL';
+  }
+};
+
 const getPaymentBadgeClass = (paymentStatus) => {
   switch (paymentStatus?.toLowerCase()) {
     case 'paid':
@@ -359,7 +346,7 @@ const getPaymentBadgeClass = (paymentStatus) => {
     case 'partially_paid':
       return 'bg-warning text-dark';
     case 'unpaid':
-      return 'bg-warning text-dark';
+      return 'bg-gold-subtle text-gold border border-gold-light';
     case 'refunded':
       return 'bg-info text-white';
     default:
@@ -370,6 +357,12 @@ const getPaymentBadgeClass = (paymentStatus) => {
 const printReceipt = () => {
   window.print();
 };
+
+const downloadPdf = () => {
+  if (reservation.value?.id) {
+    window.open(`/invoices/${reservation.value.id}/download`, '_blank');
+  }
+};
 </script>
 
 <style scoped>
@@ -378,7 +371,7 @@ const printReceipt = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 100px 1rem 3rem 1rem !important; /* Top padding to clear header */
+  padding: 100px 1rem 3rem 1rem !important;
   background-color: var(--bg-cream);
 }
 
@@ -406,16 +399,6 @@ const printReceipt = () => {
   color: #22C55E;
 }
 
-.result-icon.syncing {
-  background: #FFFBEB;
-  color: #BC9151;
-}
-
-.result-icon.pending {
-  background: #EFF6FF;
-  color: #3B82F6;
-}
-
 .result-icon i {
   font-size: 2.8rem;
 }
@@ -423,7 +406,7 @@ const printReceipt = () => {
 .result-title {
   font-family: var(--font-serif);
   font-weight: 700;
-  font-size: 2.3rem;
+  font-size: 2.2rem;
   margin-bottom: 1.25rem;
   color: var(--text-dark);
 }
@@ -432,6 +415,12 @@ const printReceipt = () => {
   color: var(--text-muted);
   font-size: 1rem;
   line-height: 1.7;
+}
+
+.total-pill {
+  background-color: #fdfbf7;
+  border: 1px solid rgba(188, 145, 81, 0.25);
+  min-width: 220px;
 }
 
 .result-actions {
@@ -445,7 +434,7 @@ const printReceipt = () => {
   letter-spacing: 0.5px;
 }
 
-/* Premium Receipt Card */
+/* Receipt Card */
 .receipt-card {
   background: #ffffff;
   border-radius: 24px;
@@ -456,7 +445,6 @@ const printReceipt = () => {
   overflow: hidden;
 }
 
-/* Subtle decorative paper strip at the top of the receipt */
 .receipt-card::before {
   content: '';
   position: absolute;
@@ -560,7 +548,6 @@ const printReceipt = () => {
   border-top-color: #e2e8f0 !important;
 }
 
-/* Animations */
 .animate-fade-up {
   animation: fadeUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   opacity: 0;
@@ -580,7 +567,6 @@ const printReceipt = () => {
 
 /* Print Styles */
 @media print {
-  /* Hide navbar, chatbot widget, success message card, and action buttons during print */
   header, nav, .result-card, .no-print, .btn, button, .chat-widget, .chatbot-button, iframe {
     display: none !important;
   }

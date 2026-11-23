@@ -453,7 +453,7 @@ const handleResendOtp = async () => {
   inset: 0;
   background: 
     radial-gradient(circle at 20% 80%, rgba(188, 145, 81, 0.12), transparent 50%),
-    url('/images/unsplash/suite-room.jpg') center/cover;
+    url('/images/emes-building.jpg') center/cover no-repeat;
   filter: brightness(0.45) saturate(1.1);
   z-index: 1;
 }

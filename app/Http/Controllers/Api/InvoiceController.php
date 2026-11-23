@@ -11,7 +11,7 @@ class InvoiceController extends Controller
 {
     public function download(string $id)
     {
-        $reservation = Reservation::with(['room', 'user'])->find($id);
+        $reservation = Reservation::with(['room', 'user', 'package'])->find($id);
 
         if (!$reservation) {
             return response()->json(['message' => 'Reservation not found'], 404);
@@ -29,7 +29,7 @@ class InvoiceController extends Controller
 
     public function view(string $id)
     {
-        $reservation = Reservation::with(['room', 'user'])->find($id);
+        $reservation = Reservation::with(['room', 'user', 'package'])->find($id);
 
         if (!$reservation) {
             return response()->json(['message' => 'Reservation not found'], 404);

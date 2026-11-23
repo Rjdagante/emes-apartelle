@@ -36,13 +36,30 @@ class BookingCancelled extends Notification
      */
     public function toArray(object $notifiable): array
     {
+        $isAdmin = in_array($notifiable->role ?? '', ['admin', 'staff']);
+        $guestName = $this->reservation->user->name ?? 'Guest';
+        $roomInfo = ($this->reservation->room->room_type ?? 'Room') . ' #' . ($this->reservation->room->room_number ?? '');
+
+        if ($isAdmin) {
+            return [
+                'type' => 'booking_cancelled',
+                'icon' => 'bi bi-calendar-x-fill',
+                'title' => 'Booking Cancelled & Refunded',
+                'message' => "Reservation for {$roomInfo} by {$guestName} was cancelled (1-week free cancellation, 100% refund).",
+                'action_url' => '/admin/reservations',
+                'action_text' => 'View Reservations',
+                'reservation_id' => $this->reservation->id
+            ];
+        }
+
         return [
-            'type' => 'alert',
+            'type' => 'booking_cancelled',
             'icon' => 'bi bi-calendar-x-fill',
             'title' => 'Booking Cancelled',
-            'message' => 'The reservation for ' . ($this->reservation->room->room_type ?? 'Room') . ' #' . ($this->reservation->room->room_number ?? '') . ' has been cancelled.',
+            'message' => 'The reservation for ' . $roomInfo . ' has been cancelled.',
             'action_url' => '/my-bookings',
-            'action_text' => 'View History'
+            'action_text' => 'View History',
+            'reservation_id' => $this->reservation->id
         ];
     }
 }

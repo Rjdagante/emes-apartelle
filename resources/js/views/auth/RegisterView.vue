@@ -62,7 +62,17 @@
                     </div>
                     <div class="col-md-6 field-group">
                       <label class="field-label">Birthdate</label>
-                      <input v-model="form.birthdate" type="date" class="field-input" required>
+                      <input
+                        v-model="form.birthdate"
+                        type="date"
+                        class="field-input"
+                        :class="{ 'border-danger': birthdateError }"
+                        :max="maxBirthdate"
+                        required
+                      >
+                      <small v-if="birthdateError" class="text-danger d-block mt-1" style="font-size: 0.75rem;">
+                        {{ birthdateError }}
+                      </small>
                     </div>
                     <div class="col-md-6 field-group">
                       <label class="field-label">Gender</label>
@@ -107,7 +117,23 @@
                   <div class="row g-3">
                     <div class="col-12 field-group">
                       <label class="field-label">Create Password</label>
-                      <input v-model="form.password" type="password" class="field-input" placeholder="••••••••" required>
+                      <div class="input-wrapper">
+                        <input 
+                          v-model="form.password" 
+                          :type="showPassword ? 'text' : 'password'" 
+                          class="field-input has-suffix" 
+                          placeholder="••••••••" 
+                          required
+                        >
+                        <button 
+                          type="button" 
+                          @click="showPassword = !showPassword" 
+                          class="field-suffix-btn" 
+                          aria-label="Toggle password visibility"
+                        >
+                          <i class="bi" :class="showPassword ? 'bi-eye-slash' : 'bi-eye'"></i>
+                        </button>
+                      </div>
                       <div class="password-strength mt-2">
                         <div class="strength-bar" :class="passwordStrengthClass"></div>
                         <span class="strength-label">{{ passwordStrengthLabel }}</span>
@@ -115,7 +141,23 @@
                     </div>
                     <div class="col-12 field-group">
                       <label class="field-label">Confirm Password</label>
-                      <input v-model="form.password_confirmation" type="password" class="field-input" placeholder="••••••••" required>
+                      <div class="input-wrapper">
+                        <input 
+                          v-model="form.password_confirmation" 
+                          :type="showConfirmPassword ? 'text' : 'password'" 
+                          class="field-input has-suffix" 
+                          placeholder="••••••••" 
+                          required
+                        >
+                        <button 
+                          type="button" 
+                          @click="showConfirmPassword = !showConfirmPassword" 
+                          class="field-suffix-btn" 
+                          aria-label="Toggle password visibility"
+                        >
+                          <i class="bi" :class="showConfirmPassword ? 'bi-eye-slash' : 'bi-eye'"></i>
+                        </button>
+                      </div>
                     </div>
                     <div class="col-12">
                       <label class="check-group" for="terms">
@@ -199,6 +241,8 @@ const { register } = useAuth();
 const currentStep = ref(0);
 const loading = ref(false);
 const terms = ref(false);
+const showPassword = ref(false);
+const showConfirmPassword = ref(false);
 
 const loginWithGoogle = async () => {
   try {
@@ -226,6 +270,34 @@ const form = reactive({
   gender: '',
   password: '',
   password_confirmation: ''
+});
+
+const maxBirthdate = computed(() => {
+  const today = new Date();
+  const maxDate = new Date(today.getFullYear() - 16, today.getMonth(), today.getDate());
+  const y = maxDate.getFullYear();
+  const m = String(maxDate.getMonth() + 1).padStart(2, '0');
+  const d = String(maxDate.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+});
+
+const isAtLeast16 = (birthdateStr) => {
+  if (!birthdateStr) return false;
+  const parts = birthdateStr.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return false;
+  const [year, month, day] = parts;
+  const today = new Date();
+  let age = today.getFullYear() - year;
+  const monthDiff = (today.getMonth() + 1) - month;
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < day)) {
+    age--;
+  }
+  return age >= 16;
+};
+
+const birthdateError = computed(() => {
+  if (!form.birthdate) return '';
+  return isAtLeast16(form.birthdate) ? '' : 'You must be at least 16 years old to register.';
 });
 
 // Computed password strength
@@ -278,11 +350,30 @@ const validateAndNext = () => {
     });
     return;
   }
+
+  if (currentStep.value === 0 && !isAtLeast16(form.birthdate)) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Age Requirement',
+      text: 'You must be at least 16 years old to create an account.',
+      toast: true,
+      position: 'top-end',
+      showConfirmButton: false,
+      timer: 3500
+    });
+    return;
+  }
   
   currentStep.value++;
 };
 
 const handleRegister = async () => {
+  if (!isAtLeast16(form.birthdate)) {
+    Swal.fire({ icon: 'error', title: 'Age Requirement', text: 'You must be at least 16 years old to create an account.' });
+    currentStep.value = 0;
+    return;
+  }
+
   if (form.password !== form.password_confirmation) {
     Swal.fire({ icon: 'error', title: 'Error', text: 'Passwords do not match.' });
     return;
@@ -324,7 +415,7 @@ const handleRegister = async () => {
   inset: 0;
   background: 
     radial-gradient(circle at 80% 20%, rgba(188, 145, 81, 0.12), transparent 50%),
-    url('/images/unsplash/hotel-lobby.jpg') center/cover;
+    url('/images/emes-building.jpg') center/cover no-repeat;
   filter: brightness(0.45) saturate(1.1);
   z-index: 1;
 }
@@ -509,6 +600,36 @@ const handleRegister = async () => {
   background-repeat: no-repeat;
   background-position: right 1rem center;
   padding-right: 2.5rem;
+}
+
+.input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.field-input.has-suffix {
+  padding-right: 2.75rem;
+}
+
+.field-suffix-btn {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #BC9151;
+  padding: 0.25rem;
+  cursor: pointer;
+  transition: color 0.2s ease;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.field-suffix-btn:hover {
+  color: #9A7640;
 }
 
 /* ==========================================

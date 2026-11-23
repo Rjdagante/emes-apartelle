@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Reservation;
 use App\Models\Room;
 use App\Services\XenditService;
@@ -31,7 +32,7 @@ class ReservationController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = Reservation::with(['room', 'user', 'review']);
+        $query = Reservation::with(['room', 'user', 'review', 'package']);
         
         // If user is not admin or staff, they can only see their own reservations
         if (!in_array($user->role, ['admin', 'staff'])) {
@@ -77,10 +78,16 @@ class ReservationController extends Controller
         
         $validator = Validator::make($request->all(), [
             'room_id' => 'required|exists:rooms,id',
+            'package_id' => 'nullable|exists:room_packages,id',
             'check_in' => 'required|date|after_or_equal:today',
             'check_out' => 'required|date|after:check_in',
             'payment_option' => 'sometimes|required|in:full,half',
             'guests' => 'nullable|integer|min:1',
+            'adults' => 'nullable|integer|min:1',
+            'children' => 'nullable|integer|min:0',
+            'children_ages' => 'nullable',
+            'extra_beds' => 'nullable|integer|min:0',
+            'guest_name' => 'nullable|string|max:255',
         ]);
 
         if (!$userId && !$request->has('user_id')) {
@@ -92,7 +99,14 @@ class ReservationController extends Controller
         }
 
         $checkIn = Carbon::parse($request->check_in);
+        if (strlen(trim($request->check_in)) <= 10 || $checkIn->format('H:i:s') === '00:00:00') {
+            $checkIn = $checkIn->setTime(13, 0, 0);
+        }
+
         $checkOut = Carbon::parse($request->check_out);
+        if (strlen(trim($request->check_out)) <= 10 || $checkOut->format('H:i:s') === '00:00:00') {
+            $checkOut = $checkOut->setTime(11, 0, 0);
+        }
 
         // Check if room is available
         $isAvailable = !Reservation::where('room_id', $request->room_id)
@@ -111,38 +125,117 @@ class ReservationController extends Controller
         }
 
         // Check if selected dates are blocked (globally or for this specific room)
-        $isBlocked = \App\Models\BlockedDate::where(function ($query) use ($request) {
+        $blockedRecord = \App\Models\BlockedDate::where(function ($query) use ($request) {
                 $query->where('room_id', $request->room_id)
                       ->orWhereNull('room_id');
             })
             ->where('start_date', '<', $checkOut)
             ->where('end_date', '>', $checkIn)
-            ->exists();
+            ->first();
 
-        if ($isBlocked) {
-            return response()->json(['message' => 'The selected dates are unavailable due to a scheduled event or maintenance.'], 422);
+        if ($blockedRecord) {
+            $reasonMsg = $blockedRecord->reason ? " Reason: {$blockedRecord->reason}." : '';
+            return response()->json([
+                'message' => "The selected dates are currently blocked and unavailable for booking.{$reasonMsg}"
+            ], 422);
         }
 
         $room = Room::find($request->room_id);
-        $days = $checkIn->diffInDays($checkOut);
+        $days = (int) $checkIn->copy()->startOfDay()->diffInDays($checkOut->copy()->startOfDay());
+        if ($days <= 0) $days = 1;
         
-        $guests = $request->input('guests', 1);
-        if (in_array($room->room_type, ['Family Room', 'Barkadahan Room'])) {
-            $totalAmount = $room->price_per_head * $guests * $days;
+        $guests = (int) $request->input('guests', 1);
+        $adults = (int) $request->input('adults', $guests);
+        $children = (int) $request->input('children', 0);
+        $childrenAges = $request->input('children_ages', []);
+        if (is_string($childrenAges)) {
+            $childrenAges = json_decode($childrenAges, true) ?: [];
+        }
+
+        // Child Policy:
+        // Children under 7 years old (ages 0-6): Free of charge (₱0).
+        // Children 7 years and older (ages 7-17): Charged the same price as adults.
+        $payingChildren = 0;
+        $freeChildren = 0;
+        if (!empty($childrenAges) && is_array($childrenAges)) {
+            foreach ($childrenAges as $age) {
+                if ((int)$age >= 7) {
+                    $payingChildren++;
+                } else {
+                    $freeChildren++;
+                }
+            }
+        }
+
+        $chargeableGuests = max(1, $adults + $payingChildren);
+        $totalGuests = max(1, $adults + $children);
+
+        $package = null;
+        if ($request->filled('package_id')) {
+            $package = \App\Models\RoomPackage::find($request->package_id);
+        }
+
+        if ($package) {
+            $totalAmount = (float) $package->price;
+            $extraGuests = 0;
+            $extraBedCharge = 0.00;
         } else {
-            $totalAmount = $room->price_per_night * $days;
+            // Maximum allowed guests strictly capped at room max occupancy
+            $maxAllowed = (int) $room->max_occupancy;
+            if ($totalGuests > $maxAllowed) {
+                return response()->json([
+                    'message' => "Maximum capacity for {$room->room_type} is {$maxAllowed} guests."
+                ], 422);
+            }
+
+            // Extra bedding charge applies when guest requests extra beds (or exceeds standard occupancy)
+            $requestedExtraBeds = (int) $request->input('extra_beds', 0);
+            $maxExtraBeds = (int) ($room->max_extra_guests ?? 2);
+            if ($requestedExtraBeds > $maxExtraBeds) {
+                return response()->json([
+                    'message' => "Maximum extra beds allowed for {$room->room_type} is {$maxExtraBeds}."
+                ], 422);
+            }
+
+            $extraGuests = max($requestedExtraBeds, max(0, $chargeableGuests - (int) $room->max_occupancy));
+            $extraBedRate = (float) ($room->extra_bed_price ?? 300.00);
+            $extraBedCharge = $extraGuests * $extraBedRate * $days;
+
+            $isPerHead = in_array($room->room_type, ['Family Room', 'Barkadahan Room']);
+            if ($isPerHead) {
+                $headRate = ($room->is_promo && $room->promo_price_per_head > 0) ? (float) $room->promo_price_per_head : (float) $room->price_per_head;
+                // Paying guests (adults + children 7+) pay the per-head rate; under 7 are free (₱0)
+                $baseAmount = $headRate * $chargeableGuests * $days;
+            } else {
+                $nightRate = ($room->is_promo && $room->promo_price > 0) ? (float) $room->promo_price : (float) $room->price_per_night;
+                $baseAmount = $nightRate * $days;
+            }
+
+            $totalAmount = $baseAmount + $extraBedCharge;
         }
 
         $paymentOption = $request->payment_option ?? 'full';
         $downpaymentAmount = ($paymentOption === 'half') ? ($totalAmount / 2) : null;
 
+        $guestName = $request->input('guest_name');
+        if (!$guestName && $request->user()) {
+            $guestName = $request->user()->name ?: trim(($request->user()->first_name ?? '') . ' ' . ($request->user()->last_name ?? ''));
+        }
+
         $reservation = Reservation::create([
             'user_id' => $userId,
+            'guest_name' => $guestName,
             'room_id' => $request->room_id,
-            'guests' => $guests,
-            'check_in' => $request->check_in,
-            'check_out' => $request->check_out,
+            'package_id' => $package ? $package->id : null,
+            'guests' => $totalGuests,
+            'adults' => $adults,
+            'children' => $children,
+            'children_ages' => $childrenAges,
+            'extra_guests' => $extraGuests,
+            'check_in' => $checkIn->format('Y-m-d H:i:s'),
+            'check_out' => $checkOut->format('Y-m-d H:i:s'),
             'total_amount' => $totalAmount,
+            'extra_bed_charge' => $extraBedCharge,
             'payment_option' => $paymentOption,
             'downpayment_amount' => $downpaymentAmount,
             'status' => 'pending',
@@ -150,7 +243,32 @@ class ReservationController extends Controller
         ]);
 
         // Send Notification immediately
-        $reservation->load(['room', 'user']);
+        $reservation->load(['room', 'user', 'package']);
+
+        // Record audit log for booking creation
+        try {
+            AuditLog::recordBookingActivity(
+                $reservation,
+                'booking_created',
+                $request->user(),
+                null,
+                null,
+                [
+                    'status' => $reservation->status,
+                    'payment_status' => $reservation->payment_status,
+                    'guests' => $reservation->guests,
+                    'adults' => $reservation->adults,
+                    'children' => $reservation->children,
+                    'check_in' => $reservation->check_in,
+                    'check_out' => $reservation->check_out,
+                    'total_amount' => $reservation->total_amount,
+                ],
+                $request
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('AuditLog (booking_created) failed: ' . $e->getMessage());
+        }
+
         if ($request->user()) {
             $request->user()->notify(new BookingCreated($reservation));
         }
@@ -162,37 +280,10 @@ class ReservationController extends Controller
         }
         Notification::send($adminsAndStaff->get(), new NewBookingForAdmin($reservation));
 
-        $amountToCharge = ($paymentOption === 'half') ? $downpaymentAmount : $totalAmount;
-
-        // Create Xendit Invoice
-        $checkoutData = [
-            'reservation_id' => $reservation->id,
-            'total_amount' => $amountToCharge,
-            'room_type' => $room->room_type,
-            'room_number' => $room->room_number,
-            'customer_name' => $request->user()->name,
-            'customer_email' => $request->user()->email,
-            'customer_phone' => $request->user()->phone,
-        ];
-
-        try {
-            $checkoutResponse = $this->xenditService->createInvoice($checkoutData);
-
-            if ($checkoutResponse['status'] === 'success' && isset($checkoutResponse['invoice_url'])) {
-                $reservation->update(['xendit_invoice_id' => $checkoutResponse['id']]);
-                return response()->json([
-                    'reservation' => $reservation,
-                    'checkout_url' => $checkoutResponse['invoice_url']
-                ], 201);
-            }
-        } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Xendit Invoice Creation Failed: ' . $e->getMessage());
-        }
-
-        // Fallback: If payment integration fails or returns no URL, allow booking to proceed as "Pay at Hotel"
+        // Return reservation directly for receipt display (no online payment redirect; settle at the apartelle)
         return response()->json([
             'reservation' => $reservation,
-            'message' => 'Reservation created successfully. Please settle payment at the hotel.',
+            'message' => 'Reservation created successfully. Please settle payment at the apartelle.',
         ], 201);
     }
 
@@ -201,7 +292,7 @@ class ReservationController extends Controller
      */
     public function show(string $id)
     {
-        $reservation = Reservation::with(['room', 'user'])->find($id);
+        $reservation = Reservation::with(['room', 'user', 'package'])->find($id);
 
         if (!$reservation) {
             return response()->json(['message' => 'Reservation not found'], 404);
@@ -277,6 +368,7 @@ class ReservationController extends Controller
             'payment_status' => 'sometimes|required|in:unpaid,partially_paid,paid,refunded',
             'check_in' => 'sometimes|required|date',
             'check_out' => 'sometimes|required|date|after:check_in',
+            'guest_name' => 'sometimes|nullable|string|max:255',
             'cancellation_reason' => 'sometimes|nullable|string|max:1000',
             'guests' => 'sometimes|required|integer|min:1',
         ]);
@@ -290,6 +382,16 @@ class ReservationController extends Controller
         }
 
         $newTotalAmount = null;
+        $extraGuests = 0;
+        $extraBedCharge = 0.00;
+        $adults = (int) ($reservation->adults ?? $reservation->guests ?? 1);
+        $children = (int) ($reservation->children ?? 0);
+        $childrenAges = $reservation->children_ages ?? [];
+        if (is_string($childrenAges)) {
+            $childrenAges = json_decode($childrenAges, true) ?: [];
+        }
+        $totalGuests = max(1, $adults + $children);
+
         // If changing dates or guest count, check availability again and calculate new total price
         if ($request->has('check_in') || $request->has('check_out') || $request->has('guests')) {
             $checkIn = Carbon::parse($request->check_in ?? $reservation->check_in);
@@ -310,14 +412,51 @@ class ReservationController extends Controller
 
             // Calculate new total amount based on new date duration and room type
             $room = Room::find($reservation->room_id);
-            $days = $checkIn->diffInDays($checkOut);
+            $days = (int) $checkIn->copy()->startOfDay()->diffInDays($checkOut->copy()->startOfDay());
+            if ($days <= 0) $days = 1;
             
-            if (in_array($room->room_type, ['Family Room', 'Barkadahan Room'])) {
-                $guests = $request->input('guests') ?? $reservation->guests ?? $room->min_occupancy;
-                $newTotalAmount = $room->price_per_head * $guests * $days;
-            } else {
-                $newTotalAmount = $room->price_per_night * $days;
+            $adults = (int) ($request->input('adults') ?? $reservation->adults ?? $request->input('guests') ?? $reservation->guests ?? 1);
+            $children = (int) ($request->input('children') ?? $reservation->children ?? 0);
+            $reqAges = $request->input('children_ages', $reservation->children_ages ?? []);
+            if (is_string($reqAges)) {
+                $childrenAges = json_decode($reqAges, true) ?: [];
+            } else if (is_array($reqAges)) {
+                $childrenAges = $reqAges;
             }
+
+            $payingChildren = 0;
+            if (!empty($childrenAges) && is_array($childrenAges)) {
+                foreach ($childrenAges as $age) {
+                    if ((int)$age >= 7) {
+                        $payingChildren++;
+                    }
+                }
+            }
+
+            $chargeableGuests = max(1, $adults + $payingChildren);
+            $totalGuests = max(1, $adults + $children);
+
+            $maxAllowed = (int) $room->max_occupancy;
+            if ($totalGuests > $maxAllowed) {
+                return response()->json([
+                    'message' => "Maximum capacity for {$room->room_type} is {$maxAllowed} guests."
+                ], 422);
+            }
+
+            $extraGuests = max(0, $chargeableGuests - (int) $room->max_occupancy);
+            $extraBedRate = (float) ($room->extra_bed_price ?? 300.00);
+            $extraBedCharge = $extraGuests * $extraBedRate * $days;
+
+            $isPerHead = in_array($room->room_type, ['Family Room', 'Barkadahan Room']);
+            if ($isPerHead) {
+                $headRate = ($room->is_promo && $room->promo_price_per_head > 0) ? (float) $room->promo_price_per_head : (float) $room->price_per_head;
+                $baseAmount = $headRate * $chargeableGuests * $days;
+            } else {
+                $nightRate = ($room->is_promo && $room->promo_price > 0) ? (float) $room->promo_price : (float) $room->price_per_night;
+                $baseAmount = $nightRate * $days;
+            }
+
+            $newTotalAmount = $baseAmount + $extraBedCharge;
         }
 
         $oldCheckout = $reservation->check_out;
@@ -327,13 +466,46 @@ class ReservationController extends Controller
             $additionalAmount = $newTotalAmount - $reservation->total_amount;
         }
 
-        return DB::transaction(function () use ($request, $reservation, $newTotalAmount, $oldCheckout, $additionalAmount, $isGuest) {
+        return DB::transaction(function () use (
+            $request, 
+            $reservation, 
+            $newTotalAmount, 
+            $oldCheckout, 
+            $additionalAmount, 
+            $isGuest, 
+            $extraGuests, 
+            $extraBedCharge,
+            $totalGuests,
+            $adults,
+            $children,
+            $childrenAges
+        ) {
             $oldStatus = $reservation->status;
             $oldPaymentStatus = $reservation->payment_status;
             
             $updateData = $request->all();
+            if ($request->filled('check_in')) {
+                $cIn = Carbon::parse($request->check_in);
+                if (strlen(trim($request->check_in)) <= 10 || $cIn->format('H:i:s') === '00:00:00') {
+                    $cIn->setTime(13, 0, 0);
+                }
+                $updateData['check_in'] = $cIn->format('Y-m-d H:i:s');
+            }
+            if ($request->filled('check_out')) {
+                $cOut = Carbon::parse($request->check_out);
+                if (strlen(trim($request->check_out)) <= 10 || $cOut->format('H:i:s') === '00:00:00') {
+                    $cOut->setTime(11, 0, 0);
+                }
+                $updateData['check_out'] = $cOut->format('Y-m-d H:i:s');
+            }
             if ($newTotalAmount !== null) {
+                $updateData['guests'] = $totalGuests;
+                $updateData['adults'] = $adults;
+                $updateData['children'] = $children;
+                $updateData['children_ages'] = $childrenAges;
                 $updateData['total_amount'] = $newTotalAmount;
+                $updateData['extra_guests'] = $extraGuests ?? 0;
+                $updateData['extra_bed_charge'] = $extraBedCharge ?? 0.00;
                 
                 // If extension increases price, reset payment status to unpaid/partially_paid for the additional nights
                 if ($newTotalAmount > $reservation->total_amount) {
@@ -361,6 +533,9 @@ class ReservationController extends Controller
             if ($reservation->status === 'cancelled' && $oldStatus !== 'cancelled') {
                 if (in_array($reservation->payment_status, ['paid', 'partially_paid'])) {
                     $reservation->update(['payment_status' => 'refunded']);
+                    Payment::where('reservation_id', $reservation->id)
+                        ->where('status', 'Succeeded')
+                        ->update(['status' => 'Refunded']);
                 }
             }
 
@@ -450,56 +625,64 @@ class ReservationController extends Controller
 
             // Notify user if status changed
             if ($oldStatus !== $reservation->status) {
-                $reservation->load('room');
-                if ($reservation->status === 'confirmed') {
-                    if ($oldStatus === 'cancellation_pending') {
-                        $reservation->update(['cancellation_reason' => null]);
-                        $reservation->user->notify(new \App\Notifications\CancellationRejectedForGuest($reservation));
-                    } else {
-                        $reservation->user->notify(new \App\Notifications\BookingConfirmed($reservation));
+                $reservation->load(['room', 'user']);
+                if ($reservation->user) {
+                    if ($reservation->status === 'confirmed') {
+                        if ($oldStatus === 'cancellation_pending') {
+                            $reservation->update(['cancellation_reason' => null]);
+                            $reservation->user->notify(new \App\Notifications\CancellationRejectedForGuest($reservation));
+                        } else {
+                            $reservation->user->notify(new \App\Notifications\BookingConfirmed($reservation));
+                        }
+                    } else if ($reservation->status === 'cancelled') {
+                        $reservation->user->notify(new \App\Notifications\BookingCancelled($reservation));
                     }
-                } else if ($reservation->status === 'cancelled') {
-                    $reservation->user->notify(new \App\Notifications\BookingCancelled($reservation));
                 }
             }
 
-            $checkoutUrl = null;
-            if ($isGuest && $additionalAmount > 0) {
-                // Create Xendit invoice for extension
-                $checkoutData = [
-                    'reservation_id' => $reservation->id,
-                    'external_id' => $reservation->id . '-ext-' . time(), // Unique external ID
-                    'total_amount' => $additionalAmount,
-                    'room_type' => $reservation->room->room_type ?? 'Room',
-                    'room_number' => $reservation->room->room_number ?? '',
-                    'description' => 'Stay Extension: Room #' . ($reservation->room->room_number ?? '') . ' (' . ($reservation->room->room_type ?? '') . ')',
-                    'item_name' => 'Stay Extension for Room #' . ($reservation->room->room_number ?? ''),
-                    'customer_name' => $request->user()->name,
-                    'customer_email' => $request->user()->email,
-                    'customer_phone' => $request->user()->phone,
-                    'success_redirect_url' => env('APP_URL') . '/my-bookings',
-                ];
-
-                try {
-                    $checkoutResponse = $this->xenditService->createInvoice($checkoutData);
-
-                    if ($checkoutResponse['status'] === 'success' && isset($checkoutResponse['invoice_url'])) {
-                        // Store the new invoice ID
-                        $reservation->update(['xendit_invoice_id' => $checkoutResponse['id']]);
-                        $checkoutUrl = $checkoutResponse['invoice_url'];
-                    }
-                } catch (\Exception $e) {
-                    \Illuminate\Support\Facades\Log::error('Xendit Extension Invoice Creation Failed: ' . $e->getMessage());
+            // Record audit log for reservation update / status change
+            try {
+                $auditAction = null;
+                if ($oldStatus !== $reservation->status) {
+                    $auditAction = match ($reservation->status) {
+                        'checked-in' => 'check_in',
+                        'completed' => 'check_out',
+                        'confirmed' => 'booking_confirmed',
+                        'cancelled' => 'booking_cancelled',
+                        default => 'booking_updated',
+                    };
+                } elseif ($oldPaymentStatus !== $reservation->payment_status) {
+                    $auditAction = 'payment_updated';
+                } elseif ($request->hasAny(['check_in', 'check_out', 'guests', 'adults', 'children', 'room_id'])) {
+                    $auditAction = 'booking_updated';
                 }
+
+                if ($auditAction) {
+                    AuditLog::recordBookingActivity(
+                        $reservation,
+                        $auditAction,
+                        $request->user(),
+                        null,
+                        [
+                            'status' => $oldStatus,
+                            'payment_status' => $oldPaymentStatus,
+                            'check_out' => $oldCheckout,
+                        ],
+                        [
+                            'status' => $reservation->status,
+                            'payment_status' => $reservation->payment_status,
+                            'check_in' => $reservation->check_in,
+                            'check_out' => $reservation->check_out,
+                            'total_amount' => $reservation->total_amount,
+                        ],
+                        $request
+                    );
+                }
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error('AuditLog (update) failed: ' . $e->getMessage());
             }
 
-            // Return response with checkout_url if created
-            $responseData = $reservation->toArray();
-            if ($checkoutUrl) {
-                $responseData['checkout_url'] = $checkoutUrl;
-            }
-
-            return response()->json($responseData);
+            return response()->json($reservation->toArray());
         });
     }
 
@@ -508,16 +691,19 @@ class ReservationController extends Controller
      */
     public function cancel(Request $request, string $id)
     {
-        $userId = $request->user()->id;
-        $reservation = Reservation::where('id', $id)
-            ->where('user_id', $userId)
-            ->first();
+        $user = $request->user();
+        $isGuest = $user && !in_array($user->role, ['admin', 'staff']);
+
+        $query = Reservation::where('id', $id);
+        if ($isGuest) {
+            $query->where('user_id', $user->id);
+        }
+        $reservation = $query->first();
 
         if (!$reservation) {
-            return response()->json(['message' => 'Reservation not found'], 404);
+            return response()->json(['message' => 'Reservation not found.'], 404);
         }
 
-        $user = $request->user();
         // ❌ BLOCK: If guest is suspended
         if ($user && $user->is_suspended) {
             return response()->json([
@@ -526,97 +712,316 @@ class ReservationController extends Controller
             ], 403);
         }
 
-        // ❌ BLOCK: Limit cancellation to 1 hour after booking creation
-        $createdAt = Carbon::parse($reservation->created_at);
-        if ($createdAt->addHour()->isPast()) {
-            return response()->json([
-                'message' => 'Reservations can only be cancelled within 1 hour of booking.'
-            ], 400);
-        }
-
-        $now = Carbon::now();
-        $checkIn = Carbon::parse($reservation->check_in);
-        
-        // Recommended Cancellation Rules:
-        // Pending: ✅ Yes -> Just cancel + free room
-        // Confirmed: ✅ Yes (before 24h cutoff) -> Cancel + refund logic
-        // Checked-in / Completed / Cancelled: ❌ No
-
         if ($reservation->status === 'cancelled') {
             return response()->json(['message' => 'Reservation is already cancelled.'], 400);
         }
 
-        if ($reservation->status === 'cancellation_pending') {
-            return response()->json(['message' => 'Cancellation request is already pending approval.'], 400);
-        }
-
         if (in_array($reservation->status, ['checked-in', 'completed'])) {
-            return response()->json(['message' => 'Cannot cancel after check-in or completion. Please contact admin.'], 400);
+            return response()->json(['message' => 'Cannot cancel after check-in or completion. Please contact administration.'], 400);
         }
 
-        if ($reservation->status === 'confirmed') {
-            // Check cutoff (24 hours before check-in)
-            // We'll use 24 hours as the standard cutoff
-            if ($now->greaterThanOrEqualTo($checkIn->copy()->subHours(24))) {
-                return response()->json([
-                    'message' => 'Cancellation period for confirmed bookings has passed (24h cutoff). Please contact admin for assistance.'
-                ], 400);
-            }
-            
-            $request->validate([
-                'reason' => 'required|string|min:5|max:1000'
-            ], [
-                'reason.required' => 'A cancellation reason is required for paid bookings.',
-                'reason.min' => 'The cancellation reason must be at least 5 characters.'
-            ]);
+        // Stay has already passed
+        $checkOut = Carbon::parse($reservation->check_out);
+        if ($checkOut->isPast()) {
+            return response()->json(['message' => 'Cannot cancel a reservation whose stay period has already passed.'], 400);
+        }
 
-            // Set status to cancellation_pending, awaiting admin approval
-            $reservation->update([
-                'status' => 'cancellation_pending',
-                'cancellation_reason' => $request->input('reason')
-            ]);
-            
-            $reservation->load(['room', 'user']);
-            
-            // Notify admins and staff of the request
-            $admins = \App\Models\User::whereIn('role', ['admin', 'staff'])->get();
-            foreach ($admins as $admin) {
-                $admin->notify(new \App\Notifications\CancellationRequestedForAdmin($reservation));
-            }
-            
+        // ❌ BLOCK: 1-week free cancellation window (7 days from booking creation)
+        $createdAt = Carbon::parse($reservation->created_at);
+        if ($isGuest && $createdAt->addDays(7)->isPast()) {
             return response()->json([
-                'message' => 'Cancellation request submitted successfully. Awaiting administrator approval.',
-                'reservation' => $reservation
-            ]);
+                'message' => 'The 1-week free cancellation window has expired. Reservations can only be cancelled within 7 days of booking.'
+            ], 400);
         }
 
-        if ($reservation->status === 'pending') {
-            $reservation->update([
-                'status' => 'cancelled',
-                'cancellation_reason' => $request->input('reason')
-            ]);
+        $reason = $request->input('reason') ?: 'Cancelled within 1-week free cancellation window (100% refund)';
+        $oldPaymentStatus = $reservation->payment_status;
+        $willRefund = in_array($oldPaymentStatus, ['paid', 'partially_paid']);
 
-            $reservation->load('room');
-            $request->user()->notify(new \App\Notifications\BookingCancelled($reservation));
+        $reservation->update([
+            'status' => 'cancelled',
+            'payment_status' => $willRefund ? 'refunded' : $oldPaymentStatus,
+            'cancellation_reason' => $reason
+        ]);
+
+        if ($willRefund) {
+            Payment::where('reservation_id', $reservation->id)
+                ->where('status', 'Succeeded')
+                ->update(['status' => 'Refunded']);
+        }
+
+        $reservation->load(['room', 'user']);
+
+        // Record audit log for booking cancellation
+        try {
+            AuditLog::recordBookingActivity(
+                $reservation,
+                'booking_cancelled',
+                $request->user(),
+                null,
+                ['payment_status' => $oldPaymentStatus],
+                [
+                    'status' => $reservation->status,
+                    'payment_status' => $reservation->payment_status,
+                    'cancellation_reason' => $reason,
+                ],
+                $request
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('AuditLog (cancel) failed: ' . $e->getMessage());
+        }
+
+        // Notify guest
+        if ($reservation->user) {
+            $reservation->user->notify(new \App\Notifications\BookingCancelled($reservation));
+        }
+
+        // Notify admins and staff
+        $admins = \App\Models\User::whereIn('role', ['admin', 'staff'])->get();
+        if ($admins->isNotEmpty()) {
+            Notification::send($admins, new \App\Notifications\BookingCancelled($reservation));
+        }
+
+        return response()->json([
+            'message' => $willRefund 
+                ? 'Your reservation has been cancelled and 100% refunded.' 
+                : 'Your reservation has been cancelled successfully.',
+            'reservation' => $reservation
+        ]);
+    }
+
+    /**
+     * Reschedule an existing reservation to different dates.
+     */
+    public function reschedule(Request $request, string $id)
+    {
+        $user = $request->user();
+        $isGuest = $user && !in_array($user->role, ['admin', 'staff']);
+
+        $query = Reservation::with(['room', 'user'])->where('id', $id);
+        if ($isGuest) {
+            $query->where('user_id', $user->id);
+        }
+        $reservation = $query->first();
+
+        if (!$reservation) {
+            return response()->json(['message' => 'Reservation not found.'], 404);
+        }
+
+        // ❌ BLOCK: If guest is suspended
+        if ($user && $user->is_suspended && !in_array($user->role, ['admin', 'staff'])) {
+            return response()->json([
+                'message' => 'Your account is suspended. You cannot modify reservations.',
+                'is_suspended' => true
+            ], 403);
+        }
+
+        // Can only reschedule active bookings (pending or confirmed)
+        if (!in_array($reservation->status, ['pending', 'confirmed'])) {
+            return response()->json([
+                'message' => "Only pending or confirmed bookings can be rescheduled. Current status: {$reservation->status}."
+            ], 422);
+        }
+
+        // Check if original check-in has already passed
+        $currentCheckIn = Carbon::parse($reservation->check_in);
+        if (Carbon::now()->greaterThan($currentCheckIn->copy()->endOfDay())) {
+            return response()->json([
+                'message' => 'Reservations cannot be rescheduled after the original check-in date has passed.'
+            ], 422);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'check_in' => 'required|date|after_or_equal:today',
+            'check_out' => 'required|date|after:check_in',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json($validator->errors(), 422);
+        }
+
+        $newCheckIn = Carbon::parse($request->check_in);
+        if (strlen(trim($request->check_in)) <= 10 || $newCheckIn->format('H:i:s') === '00:00:00') {
+            $newCheckIn->setTime(13, 0, 0);
+        }
+
+        $newCheckOut = Carbon::parse($request->check_out);
+        if (strlen(trim($request->check_out)) <= 10 || $newCheckOut->format('H:i:s') === '00:00:00') {
+            $newCheckOut->setTime(11, 0, 0);
+        }
+
+        // Check room availability for the new dates (excluding this reservation)
+        $isAvailable = !Reservation::where('room_id', $reservation->room_id)
+            ->where('id', '!=', $reservation->id)
+            ->where(function ($query) use ($newCheckIn, $newCheckOut) {
+                $query->where('check_in', '<', $newCheckOut)
+                      ->where('check_out', '>', $newCheckIn);
+            })
+            ->whereIn('status', ['pending', 'confirmed', 'checked-in'])
+            ->exists();
+
+        if (!$isAvailable) {
+            return response()->json(['message' => 'The room is not available for the selected dates.'], 422);
+        }
+
+        // Check blocked dates (global or room-specific)
+        $isBlocked = \App\Models\BlockedDate::where(function ($q) use ($reservation) {
+                $q->where('room_id', $reservation->room_id)
+                  ->orWhereNull('room_id');
+            })
+            ->where('start_date', '<', $newCheckOut)
+            ->where('end_date', '>', $newCheckIn)
+            ->exists();
+
+        if ($isBlocked) {
+            return response()->json(['message' => 'The selected dates are currently blocked and unavailable for booking.'], 422);
+        }
+
+        // Calculate new total amount
+        $room = $reservation->room ?: Room::find($reservation->room_id);
+        $days = (int) $newCheckIn->copy()->startOfDay()->diffInDays($newCheckOut->copy()->startOfDay());
+        if ($days <= 0) $days = 1;
+
+        $adults = (int) ($reservation->adults ?? $reservation->guests ?? 1);
+        $children = (int) ($reservation->children ?? 0);
+        $childrenAges = $reservation->children_ages ?? [];
+        if (is_string($childrenAges)) {
+            $childrenAges = json_decode($childrenAges, true) ?: [];
+        }
+
+        $payingChildren = 0;
+        if (!empty($childrenAges) && is_array($childrenAges)) {
+            foreach ($childrenAges as $age) {
+                if ((int)$age >= 7) {
+                    $payingChildren++;
+                }
+            }
+        }
+
+        $chargeableGuests = max(1, $adults + $payingChildren);
+        $totalGuests = max(1, $adults + $children);
+
+        $extraGuests = max(0, $chargeableGuests - (int) $room->max_occupancy);
+        $extraBedRate = (float) ($room->extra_bed_price ?? 300.00);
+        $extraBedCharge = $extraGuests * $extraBedRate * $days;
+
+        $isPerHead = in_array($room->room_type, ['Family Room', 'Barkadahan Room']);
+        if ($isPerHead) {
+            $headRate = ($room->is_promo && $room->promo_price_per_head > 0) ? (float) $room->promo_price_per_head : (float) $room->price_per_head;
+            $baseAmount = $headRate * $chargeableGuests * $days;
+        } else {
+            $nightRate = ($room->is_promo && $room->promo_price > 0) ? (float) $room->promo_price : (float) $room->price_per_night;
+            $baseAmount = $nightRate * $days;
+        }
+
+        $newTotalAmount = $baseAmount + $extraBedCharge;
+        $oldTotalAmount = (float) $reservation->total_amount;
+        $additionalAmount = max(0, $newTotalAmount - $oldTotalAmount);
+
+        // Check total amount already successfully paid
+        $totalPaid = Payment::where('reservation_id', $reservation->id)
+            ->where('status', 'Succeeded')
+            ->sum('amount');
+
+        $remainingBalance = max(0, $newTotalAmount - $totalPaid);
+        $oldCheckInStr = $reservation->check_in;
+        $oldCheckOutStr = $reservation->check_out;
+
+        return DB::transaction(function () use (
+            $reservation, 
+            $newCheckIn, 
+            $newCheckOut, 
+            $newTotalAmount, 
+            $additionalAmount, 
+            $remainingBalance, 
+            $isGuest, 
+            $oldCheckInStr, 
+            $oldCheckOutStr, 
+            $extraGuests, 
+            $extraBedCharge,
+            $room
+        ) {
+            $oldPaymentStatus = $reservation->payment_status;
+
+            $updateData = [
+                'check_in' => $newCheckIn->format('Y-m-d H:i:s'),
+                'check_out' => $newCheckOut->format('Y-m-d H:i:s'),
+                'total_amount' => max($reservation->total_amount, $newTotalAmount),
+                'extra_guests' => $extraGuests,
+                'extra_bed_charge' => $extraBedCharge,
+            ];
+
+            // If additional days increase total amount, update payment status
+            if ($additionalAmount > 0) {
+                $updateData['payment_status'] = ($oldPaymentStatus === 'paid') ? 'partially_paid' : 'unpaid';
+            }
+
+            $reservation->update($updateData);
+
+            // Notifications
+            $adminsAndStaff = \App\Models\User::whereIn('role', ['admin', 'staff'])->get();
+            if ($adminsAndStaff->isNotEmpty()) {
+                Notification::send($adminsAndStaff, new \App\Notifications\BookingRescheduledForAdmin($reservation, $oldCheckInStr, $oldCheckOutStr));
+            }
+
+            // Record audit log for booking reschedule
+            try {
+                AuditLog::recordBookingActivity(
+                    $reservation,
+                    'booking_rescheduled',
+                    request()->user(),
+                    null,
+                    [
+                        'check_in' => $oldCheckInStr,
+                        'check_out' => $oldCheckOutStr,
+                    ],
+                    [
+                        'check_in' => $reservation->check_in,
+                        'check_out' => $reservation->check_out,
+                        'total_amount' => $reservation->total_amount,
+                    ],
+                    request()
+                );
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error('AuditLog (reschedule) failed: ' . $e->getMessage());
+            }
 
             return response()->json([
-                'message' => 'Reservation cancelled successfully.',
-                'reservation' => $reservation
+                'message' => 'Reservation rescheduled successfully.' . ($additionalAmount > 0 ? ' Please settle the remaining balance at the apartelle.' : ''),
+                'reservation' => $reservation->fresh(['room', 'user', 'review', 'package']),
+                'additional_amount' => $additionalAmount,
+                'remaining_balance' => $remainingBalance,
             ]);
-        }
-
-        return response()->json(['message' => 'This reservation cannot be cancelled.'], 400);
+        });
     }
 
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(string $id)
+    public function destroy(Request $request, string $id)
     {
-        $reservation = Reservation::find($id);
+        $reservation = Reservation::with(['room', 'user'])->find($id);
 
         if (!$reservation) {
             return response()->json(['message' => 'Reservation not found'], 404);
+        }
+
+        try {
+            AuditLog::recordBookingActivity(
+                $reservation,
+                'booking_deleted',
+                $request->user(),
+                null,
+                [
+                    'status' => $reservation->status,
+                    'payment_status' => $reservation->payment_status,
+                    'total_amount' => $reservation->total_amount,
+                ],
+                null,
+                $request
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('AuditLog (destroy) failed: ' . $e->getMessage());
         }
 
         $reservation->delete();
@@ -646,7 +1051,7 @@ class ReservationController extends Controller
         if ($status === 'PAID' || $status === 'SETTLED') {
             $paymentId = $invoice['id'];
             $externalId = $invoice['external_id'] ?? '';
-            $isExtension = str_contains($externalId, '-ext-');
+            $isAdditional = str_contains($externalId, '-ext-') || str_contains($externalId, '-resched-');
 
             // 1. Determine payment amount
             $paidAmount = $invoice['paid_amount'] ?? $invoice['amount'] ?? 0;
@@ -663,9 +1068,9 @@ class ReservationController extends Controller
                 ->first();
 
             if (!$exists) {
-                // Check for MANUAL- payment only if NOT a stay extension
+                // Check for MANUAL- payment only if NOT a stay extension or reschedule
                 $manualPayment = null;
-                if (!$isExtension) {
+                if (!$isAdditional) {
                     $manualPayment = Payment::where('reservation_id', $reservation->id)
                         ->where('paymongo_payment_id', 'LIKE', 'MANUAL-%')
                         ->where('status', 'Succeeded')

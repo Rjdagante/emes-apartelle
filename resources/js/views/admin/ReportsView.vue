@@ -139,11 +139,16 @@
 
         <!-- Detailed Breakdown Section -->
         <div class="col-lg-12 pb-5">
-           <div class="d-flex align-items-center justify-content-between mb-3">
+           <div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
               <h4 class="serif-font fw-bold mb-0 text-secondary-dark">Detailed Data Breakdown</h4>
-              <button @click="downloadCSV" class="btn btn-gold btn-sm rounded-pill px-3">
-                <i class="bi bi-download me-2"></i>Export CSV
-              </button>
+              <div class="d-flex align-items-center gap-2">
+                <button @click="downloadCSV" class="btn btn-outline-gold btn-sm rounded-pill px-3" title="Export as CSV spreadsheet">
+                  <i class="bi bi-file-earmark-spreadsheet me-2"></i>Export CSV
+                </button>
+                <button @click="printReport" class="btn btn-gold btn-sm rounded-pill px-3 shadow-sm" title="Open print layout & print">
+                  <i class="bi bi-printer me-2"></i>Print Report
+                </button>
+              </div>
            </div>
 
            <div class="row g-4">
@@ -206,9 +211,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
 import axios from 'axios';
+import Swal from 'sweetalert2';
 import VueApexCharts from "vue3-apexcharts";
+import { useAuth } from '../../store/auth';
+
+const { state } = useAuth();
 
 const apexchart = VueApexCharts;
 
@@ -385,6 +394,443 @@ const downloadCSV = () => {
     link.click();
     document.body.removeChild(link);
 };
+
+const isExportingPdf = ref(false);
+
+const downloadPDF = async () => {
+    isExportingPdf.value = true;
+    try {
+        const response = await axios.get('/api/admin/reports/pdf', {
+            params: {
+                financial_timeframe: financialTimeframe.value,
+                status_timeframe: statusTimeframe.value,
+                trends_timeframe: trendsTimeframe.value,
+                room_timeframe: roomTimeframe.value,
+            },
+            responseType: 'blob'
+        });
+
+        const blob = new Blob([response.data], { type: 'application/pdf' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", `eme_apartelle_report_${new Date().toISOString().split('T')[0]}.pdf`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    } catch (error) {
+        console.error('Failed to export PDF report', error);
+        Swal.fire({
+            icon: 'error',
+            title: 'Export Failed',
+            text: 'Could not generate the PDF report. Please try again.',
+            confirmButtonColor: '#bc9151'
+        });
+    } finally {
+        isExportingPdf.value = false;
+    }
+};
+
+const printReport = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Popup Blocked',
+            text: 'Please allow popups to open the print layout.',
+            confirmButtonColor: '#bc9151'
+        });
+        return;
+    }
+
+    const roomRows = currentRoomPerformance.value.map(r => {
+        const rev = parseFloat(r.total_revenue) || 0;
+        const share = totalRoomRevenue.value > 0 ? ((rev / totalRoomRevenue.value) * 100).toFixed(1) : 0;
+        return `
+            <tr>
+                <td style="padding: 7px 10px; border-bottom: 1px solid #e2e8f0; font-weight: bold;">${r.room_type}</td>
+                <td style="padding: 7px 10px; border-bottom: 1px solid #e2e8f0; text-align: center;">${r.count}</td>
+                <td style="padding: 7px 10px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: bold;">₱${rev.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                <td style="padding: 7px 10px; border-bottom: 1px solid #e2e8f0; text-align: right;">${share}%</td>
+            </tr>
+        `;
+    }).join('') || '<tr><td colspan="4" style="text-align: center; color: #94a3b8; padding: 12px;">No room performance data available.</td></tr>';
+
+    const financialRows = currentFinancialData.value.map(m => {
+        const rev = parseFloat(m.revenue) || 0;
+        return `
+            <tr>
+                <td style="padding: 7px 10px; border-bottom: 1px solid #e2e8f0;">${m.month}</td>
+                <td style="padding: 7px 10px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: bold;">₱${rev.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+            </tr>
+        `;
+    }).join('') || '<tr><td colspan="2" style="text-align: center; color: #94a3b8; padding: 10px;">No revenue records.</td></tr>';
+
+    const statusRows = currentStatusData.value.map(s => {
+        const count = parseInt(s.count) || 0;
+        const share = totalStatusCount.value > 0 ? ((count / totalStatusCount.value) * 100).toFixed(1) : 0;
+        return `
+            <tr>
+                <td style="padding: 7px 10px; border-bottom: 1px solid #e2e8f0; font-weight: bold; text-transform: uppercase;">${s.status}</td>
+                <td style="padding: 7px 10px; border-bottom: 1px solid #e2e8f0; text-align: center;">${count}</td>
+                <td style="padding: 7px 10px; border-bottom: 1px solid #e2e8f0; text-align: right;">${share}%</td>
+            </tr>
+        `;
+    }).join('') || '<tr><td colspan="3" style="text-align: center; color: #94a3b8; padding: 10px;">No status data.</td></tr>';
+
+    const trendsRows = currentTrendsData.value.map(t => {
+        return `
+            <tr>
+                <td style="padding: 7px 10px; border-bottom: 1px solid #e2e8f0;">${t.date}</td>
+                <td style="padding: 7px 10px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: bold;">${t.count}</td>
+            </tr>
+        `;
+    }).join('');
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>EME'S Apartelle - Performance Report</title>
+    <style>
+        @page {
+            size: A4 portrait;
+            margin: 15mm;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            color: #1e293b;
+            font-size: 11px;
+            line-height: 1.4;
+            margin: 0;
+            padding: 20px;
+            background: #ffffff;
+        }
+        .no-print {
+            background: #0f172a;
+            color: #ffffff;
+            padding: 10px 20px;
+            margin: -20px -20px 20px -20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 3px solid #bc9151;
+        }
+        .btn-action {
+            background: #bc9151;
+            color: #ffffff;
+            border: none;
+            padding: 7px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 12px;
+            cursor: pointer;
+            margin-right: 8px;
+        }
+        .btn-action:hover { background: #a27b3d; }
+        .btn-close {
+            background: #334155;
+            color: #ffffff;
+            border: none;
+            padding: 7px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .header-table {
+            width: 100%;
+            border-bottom: 2px solid #bc9151;
+            padding-bottom: 10px;
+            margin-bottom: 18px;
+        }
+        .brand-title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #0f172a;
+            margin: 0;
+            letter-spacing: 0.5px;
+        }
+        .brand-subtitle {
+            font-size: 10px;
+            color: #64748b;
+            margin: 2px 0 0 0;
+            text-transform: uppercase;
+        }
+        .kpi-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 8px 0;
+            margin-bottom: 20px;
+        }
+        .kpi-cell {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-top: 3px solid #bc9151;
+            border-radius: 6px;
+            padding: 10px;
+            text-align: center;
+        }
+        .kpi-label {
+            font-size: 9px;
+            font-weight: bold;
+            color: #64748b;
+            text-transform: uppercase;
+            margin-bottom: 3px;
+        }
+        .kpi-value {
+            font-size: 15px;
+            font-weight: bold;
+            color: #0f172a;
+        }
+        .section-title {
+            font-size: 12px;
+            font-weight: bold;
+            color: #0f172a;
+            text-transform: uppercase;
+            border-bottom: 1px solid #e2e8f0;
+            padding-bottom: 4px;
+            margin: 16px 0 8px 0;
+        }
+        table.data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 16px;
+            font-size: 11px;
+        }
+        table.data-table th {
+            background: #0f172a;
+            color: #ffffff;
+            font-size: 9px;
+            font-weight: bold;
+            text-transform: uppercase;
+            padding: 7px 10px;
+            text-align: left;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        table.data-table tfoot td {
+            font-weight: bold;
+            background: #f1f5f9;
+            border-top: 2px solid #cbd5e1;
+            border-bottom: 2px solid #cbd5e1;
+            padding: 7px 10px;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        .two-col-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .two-col-table td {
+            vertical-align: top;
+            width: 50%;
+        }
+        .footer-note {
+            margin-top: 25px;
+            padding-top: 10px;
+            border-top: 1px solid #e2e8f0;
+            font-size: 9px;
+            color: #94a3b8;
+            text-align: center;
+        }
+        @media print {
+            .no-print { display: none !important; }
+            body { padding: 0 !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="no-print">
+        <div>
+            <strong>EME'S Apartelle</strong> • Print Layout Preview
+        </div>
+        <div>
+            <button class="btn-action" onclick="window.print()">Print / Save as PDF</button>
+            <button class="btn-close" onclick="window.close()">Close</button>
+        </div>
+    </div>
+
+    <table class="header-table" cellpadding="0" cellspacing="0">
+        <tr>
+            <td>
+                <h1 class="brand-title">EME'S APARTELLE</h1>
+                <p class="brand-subtitle">Apartelle &amp; Suites • Administrative Performance Report</p>
+            </td>
+            <td style="text-align: right; font-size: 10px; color: #475569;">
+                <div style="margin-bottom: 3px;"><strong>Report:</strong> Performance &amp; Analytics</div>
+                <div><strong>Generated:</strong> ${currentDateTimeFormatted.value}</div>
+                <div><strong>Prepared By:</strong> ${currentAdminName.value}</div>
+            </td>
+        </tr>
+    </table>
+
+    <table class="kpi-table" cellpadding="0" cellspacing="0">
+        <tr>
+            <td class="kpi-cell" style="width: 25%;">
+                <div class="kpi-label">Total Revenue</div>
+                <div class="kpi-value" style="color: #bc9151;">₱${Number(reportsData.value.summary.total_revenue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            </td>
+            <td class="kpi-cell" style="width: 25%;">
+                <div class="kpi-label">Total Bookings</div>
+                <div class="kpi-value">${Number(reportsData.value.summary.total_bookings || 0).toLocaleString()}</div>
+            </td>
+            <td class="kpi-cell" style="width: 25%;">
+                <div class="kpi-label">Avg Booking Value</div>
+                <div class="kpi-value">₱${Number(reportsData.value.summary.avg_booking_value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+            </td>
+            <td class="kpi-cell" style="width: 25%;">
+                <div class="kpi-label">Cancellation Rate</div>
+                <div class="kpi-value">${Number(reportsData.value.summary.cancellation_rate || 0).toFixed(1)}%</div>
+            </td>
+        </tr>
+    </table>
+
+    <div class="section-title">Room Performance Analysis (${roomTimeframe.value.toUpperCase()})</div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Room Type</th>
+                <th style="text-align: center;">Total Bookings</th>
+                <th style="text-align: right;">Total Revenue</th>
+                <th style="text-align: right;">Revenue Share</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${roomRows}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td>TOTAL</td>
+                <td style="text-align: center;">${totalRoomBookings.value}</td>
+                <td style="text-align: right; color: #bc9151;">₱${totalRoomRevenue.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                <td style="text-align: right;">100.0%</td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <table class="two-col-table" cellpadding="0" cellspacing="0">
+        <tr>
+            <td style="padding-right: 10px;">
+                <div class="section-title">Revenue History (${financialTimeframe.value.toUpperCase()})</div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Period</th>
+                            <th style="text-align: right;">Revenue</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${financialRows}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td>TOTAL</td>
+                            <td style="text-align: right; color: #bc9151;">₱${totalFinancialRevenue.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </td>
+            <td style="padding-left: 10px;">
+                <div class="section-title">Status Summary (${statusTimeframe.value.toUpperCase()})</div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th style="text-align: center;">Count</th>
+                            <th style="text-align: right;">Share</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${statusRows}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td>TOTAL</td>
+                            <td style="text-align: center;">${totalStatusCount.value}</td>
+                            <td style="text-align: right;">100.0%</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </td>
+        </tr>
+    </table>
+
+    ${trendsRows ? `
+    <div class="section-title">Booking Trends (${trendsTimeframe.value.toUpperCase()})</div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Date / Period</th>
+                <th style="text-align: center;">New Bookings</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${trendsRows}
+        </tbody>
+        <tfoot>
+            <tr>
+                <td>TOTAL</td>
+                <td style="text-align: center;">${totalTrendsCount.value}</td>
+            </tr>
+        </tfoot>
+    </table>
+    ` : ''}
+
+    <div class="footer-note">
+        EME'S Apartelle • Administrative Performance Report • Confidential Document for Internal Use Only
+    </div>
+</body>
+</html>
+    `;
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => {
+        printWindow.print();
+    }, 300);
+};
+
+const currentDateTimeFormatted = computed(() => {
+    return new Date().toLocaleDateString('en-US', {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+});
+
+const currentAdminName = computed(() => {
+    if (!state.user) return 'Administrator';
+    const name = `${state.user.first_name || ''} ${state.user.last_name || ''}`.trim();
+    return name || state.user.name || 'Administrator';
+});
+
+const totalRoomBookings = computed(() => {
+    return currentRoomPerformance.value.reduce((acc, r) => acc + (parseInt(r.count) || 0), 0);
+});
+
+const totalRoomRevenue = computed(() => {
+    return currentRoomPerformance.value.reduce((acc, r) => acc + (parseFloat(r.total_revenue) || 0), 0);
+});
+
+const totalFinancialRevenue = computed(() => {
+    return currentFinancialData.value.reduce((acc, m) => acc + (parseFloat(m.revenue) || 0), 0);
+});
+
+const totalStatusCount = computed(() => {
+    return currentStatusData.value.reduce((acc, s) => acc + (parseInt(s.count) || 0), 0);
+});
+
+const totalTrendsCount = computed(() => {
+    return currentTrendsData.value.reduce((acc, t) => acc + (parseInt(t.count) || 0), 0);
+});
 </script>
 
 <style scoped>

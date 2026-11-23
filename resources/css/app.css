@@ -121,6 +121,14 @@ h6,
     color: var(--primary-gold) !important;
 }
 
+.text-gold {
+    color: var(--primary-gold) !important;
+}
+
+.text-secondary-dark {
+    color: var(--secondary-dark) !important;
+}
+
 .text-gold-italic {
     color: var(--primary-gold);
     font-family: var(--font-serif);
@@ -593,4 +601,50 @@ input::placeholder {
     background-color: rgba(111, 66, 193, 0.1) !important;
     color: #6f42c1 !important;
     border: 1px solid rgba(111, 66, 193, 0.2) !important;
+}
+
+/* ============================================================
+   Global Modal Scroll Lock System (Applied Across Entire App)
+   Locks background scrolling and scrollbars whenever any modal/overlay is open
+   ============================================================ */
+html.modal-open,
+body.modal-open,
+html:has(.modal-overlay),
+html:has([class*="modal-overlay"]),
+html:has(.modal-backdrop),
+html:has([class*="modal-backdrop"]),
+html:has(.image-preview-overlay),
+html:has([class*="preview-overlay"]),
+html:has(.modal.show),
+html:has(.modal.d-block),
+html:has(.custom-modal-backdrop),
+html:has(.print-modal-overlay),
+html:has(.swal2-container.swal2-shown),
+body:has(.modal-overlay),
+body:has([class*="modal-overlay"]),
+body:has(.modal-backdrop),
+body:has([class*="modal-backdrop"]),
+body:has(.image-preview-overlay),
+body:has([class*="preview-overlay"]),
+body:has(.modal.show),
+body:has(.modal.d-block),
+body:has(.custom-modal-backdrop),
+body:has(.print-modal-overlay),
+body:has(.swal2-container.swal2-shown) {
+    overflow: hidden !important;
+}
+
+/* Prevent scroll chaining from modal containers and overlays to background */
+.modal-overlay,
+[class*="modal-overlay"],
+.modal,
+.modal-dialog,
+.modal-backdrop,
+[class*="modal-backdrop"],
+.image-preview-overlay,
+[class*="preview-overlay"],
+.custom-modal-backdrop,
+.print-modal-overlay,
+.swal2-container {
+    overscroll-behavior: contain !important;
 }

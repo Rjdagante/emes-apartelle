@@ -50,7 +50,7 @@ const values = [
           <div class="row align-items-center g-5 animate-fade-up delay-1">
             <div class="col-lg-6">
               <div class="journey-image-wrapper">
-                <img src="/images/unsplash/hotel-building.jpg" alt="EME's Apartelle Journey" class="img-fluid rounded-4 shadow-lg">
+                <img src="/images/emes-journey.jpg" alt="EME's Apartelle Journey" class="img-fluid rounded-4 shadow-lg w-100">
               </div>
             </div>
             <div class="col-lg-6">

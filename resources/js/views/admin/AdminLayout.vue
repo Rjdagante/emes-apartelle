@@ -72,18 +72,20 @@
         <div class="header-right d-flex align-items-center gap-4">
           <!-- Notification Bell -->
           <div class="dropdown">
-            <button class="btn btn-icon position-relative shadow-none" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-              <i class="bi bi-bell fs-5 text-secondary-dark"></i>
-              <span v-if="unreadNotificationCount > 0" 
-                    class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger border border-2 border-white shadow-sm animate-pulse-slow" 
-                    style="font-size: 0.6rem; padding: 0.35em 0.6em;">
-                {{ unreadNotificationCount }}
-              </span>
+            <button class="header-icon-btn d-flex align-items-center justify-content-center shadow-none border-0" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Notifications">
+              <div class="bell-icon-wrapper position-relative d-inline-flex align-items-center justify-content-center">
+                <i class="bi bi-bell fs-5 text-secondary-dark"></i>
+                <span v-if="unreadNotificationCount > 0" 
+                      class="header-notif-badge badge rounded-pill bg-danger border border-2 border-white shadow-sm"
+                      :title="`${unreadNotificationCount} unread notifications`">
+                  {{ unreadNotificationCount > 99 ? '99+' : unreadNotificationCount }}
+                </span>
+              </div>
             </button>
-            <ul class="dropdown-menu dropdown-menu-end shadow-premium border-0 mt-3 p-0 rounded-4 animate-scale-up overflow-hidden" style="width: 360px;">
+            <ul class="dropdown-menu dropdown-menu-end shadow-premium border-0 mt-3 p-0 rounded-4 animate-scale-up overflow-hidden" style="width: 330px;">
               <li class="p-3 border-bottom bg-white d-flex align-items-center justify-content-between">
                 <div>
-                  <h6 class="mb-0 fw-bold text-secondary-dark">Notifications</h6>
+                  <h6 class="mb-0 fw-bold serif-font text-secondary-dark" style="font-size: 0.95rem;">Notifications</h6>
                   <span v-if="unreadNotificationCount > 0" class="x-small text-gold fw-bold">{{ unreadNotificationCount }} new updates</span>
                   <span v-else class="x-small text-muted">All caught up</span>
                 </div>
@@ -104,24 +106,24 @@
                        :class="{ 'unread': !notification.read_at, 'read': !!notification.read_at }">
                     <div class="notif-icon-box rounded-circle d-flex align-items-center justify-content-center flex-shrink-0 shadow-sm" 
                          :class="[getNotificationColorClass(notification), { 'opacity-75': notification.read_at }]">
-                      <i :class="notification.data.icon || 'bi-bell'" style="font-size: 1.1rem;"></i>
+                      <i :class="notification.data.icon || 'bi-bell'"></i>
                     </div>
                     <div class="overflow-hidden flex-grow-1">
                       <div class="d-flex justify-content-between align-items-center mb-1">
                         <p class="mb-0 text-dark small fw-bold text-truncate">{{ notification.data.title }}</p>
                         <small class="notif-time text-muted">{{ formatTimeAgo(notification.created_at) }}</small>
                       </div>
-                      <p class="mb-0 text-muted x-small lh-base text-truncate-2">{{ notification.data.message }}</p>
+                      <p class="mb-0 text-muted x-small line-clamp-2">{{ notification.data.message }}</p>
                     </div>
                     <div v-if="!notification.read_at" class="unread-dot"></div>
                   </div>
                 </li>
                 
                 <li v-if="notifications.length === 0" class="p-5 text-center text-muted animate-fade-in">
-                  <div class="empty-notif-icon mb-3 mx-auto rounded-circle bg-light d-flex align-items-center justify-content-center" style="width: 60px; height: 60px;">
-                    <i class="bi bi-bell-slash fs-3 opacity-25"></i>
+                  <div class="empty-notif-icon mb-3 mx-auto rounded-circle bg-light d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                    <i class="bi bi-bell-slash fs-4 opacity-25"></i>
                   </div>
-                  <h6 class="fw-bold text-secondary-dark mb-1">No Notifications</h6>
+                  <h6 class="fw-bold text-secondary-dark mb-1 small">No Notifications</h6>
                   <p class="x-small text-muted mb-0">We'll let you know when something important happens.</p>
                 </li>
               </div>
@@ -392,6 +394,7 @@ const menuItems = computed(() => {
     { name: 'Payments', path: '/admin/payments', icon: 'bi-credit-card' },
     { name: 'Disputes', path: '/admin/disputes', icon: 'bi-exclamation-triangle' },
     { name: 'Reports', path: '/admin/reports', icon: 'bi-bar-chart-line-fill' },
+    { name: 'Audit Logs', path: '/admin/audit-logs', icon: 'bi-journal-text' },
   ];
   
   if (state.user?.role === 'staff') {
@@ -506,6 +509,48 @@ const handleLogout = async () => {
 .main-header {
   background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(12px);
+}
+
+.header-icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: transparent;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.header-icon-btn:hover {
+  background: rgba(188, 145, 81, 0.1);
+}
+
+.bell-icon-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+}
+
+.header-notif-badge {
+  position: absolute;
+  top: -5px;
+  right: -9px;
+  font-size: 0.6rem !important;
+  font-weight: 700;
+  padding: 0.15em 0.45em !important;
+  line-height: 1;
+  min-width: 17px;
+  height: 17px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: -0.2px;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.4) !important;
 }
 
 .bg-cream-light {
@@ -650,8 +695,33 @@ const handleLogout = async () => {
 }
 
 .notif-icon-box {
-    width: 44px;
-    height: 44px;
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    font-size: 0.95rem;
+}
+
+.notif-item .small,
+.notif-item p.small {
+    font-size: 0.825rem !important;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.x-small,
+.notif-item .x-small,
+.notif-item p.x-small {
+    font-size: 0.75rem !important;
+    line-height: 1.4;
+}
+
+.line-clamp-2,
+.text-truncate-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
 .bg-gold-glass {
@@ -660,8 +730,8 @@ const handleLogout = async () => {
 }
 
 .notif-time {
-    font-size: 0.65rem;
-    font-weight: 600;
+    font-size: 0.68rem !important;
+    font-weight: 500;
 }
 
 .unread-dot {
@@ -674,7 +744,7 @@ const handleLogout = async () => {
 }
 
 .notif-footer-link {
-    font-size: 0.8rem;
+    font-size: 0.75rem !important;
     font-weight: 700;
     color: var(--primary-gold);
     text-decoration: none;

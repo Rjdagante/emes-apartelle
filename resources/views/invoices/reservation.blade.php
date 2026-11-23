@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html>
 <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
     <meta charset="utf-8">
     <title>Invoice #{{ $reservation->id }}</title>
     <style>
-        body { font-family: 'Helvetica Neue', 'Helvetica', Helvetica, Arial, sans-serif; color: #333; }
+        body { font-family: 'DejaVu Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; }
         .invoice-box { max-width: 800px; margin: auto; padding: 30px; border: 1px solid #eee; box-shadow: 0 0 10px rgba(0, 0, 0, .15); font-size: 16px; line-height: 24px; }
         .invoice-box table { width: 100%; line-height: inherit; text-align: left; }
         .invoice-box table td { padding: 5px; vertical-align: top; }
@@ -51,9 +52,9 @@
                                 City, Province, 4000
                             </td>
                             <td>
-                                {{ $reservation->user->name }}<br>
+                                {{ $reservation->guest_name ?? $reservation->user->name }}<br>
                                 {{ $reservation->user->email }}<br>
-                                {{ $reservation->user->contact_number ?? '' }}
+                                {{ $reservation->user->phone ?? ($reservation->user->contact_number ?? '') }}
                             </td>
                         </tr>
                     </table>
@@ -70,49 +71,122 @@
             @php
                 $checkIn = \Carbon\Carbon::parse($reservation->check_in);
                 $checkOut = \Carbon\Carbon::parse($reservation->check_out);
-                $nights = $checkIn->diffInDays($checkOut);
+                $nights = (int) $checkIn->copy()->startOfDay()->diffInDays($checkOut->copy()->startOfDay());
                 if ($nights <= 0) $nights = 1;
             @endphp
             <tr class="item">
                 <td>Stay Duration</td>
-                <td>{{ $reservation->check_in }} to {{ $reservation->check_out }} ({{ $nights }} night{{ $nights > 1 ? 's' : '' }})</td>
+                <td>{{ $checkIn->format('M d, Y (1:00 PM)') }} to {{ $checkOut->format('M d, Y (11:00 AM)') }} ({{ $nights }} night{{ $nights > 1 ? 's' : '' }})</td>
             </tr>
-            @if(in_array($reservation->room->room_type, ['Family Room', 'Barkadahan Room']))
+            @if($reservation->package)
+            <tr class="item">
+                <td>Tour Package</td>
+                <td>
+                    <strong>{{ $reservation->package->name }}</strong><br>
+                    <span style="color: #666; font-size: 13px;">{{ $reservation->package->duration }} &middot; {{ $reservation->package->pax }}</span>
+                    @if($reservation->package->inclusions)
+                        <br><span style="color: #777; font-size: 12px;">Inclusions: {{ $reservation->package->inclusions }}</span>
+                    @endif
+                </td>
+            </tr>
+            <tr class="item">
+                <td>Package Rate</td>
+                <td>
+                    &#8369;{{ number_format($reservation->package->price, 2) }}
+                    <br>
+                    <span style="color: #666; font-size: 13px; font-style: italic;">(All-inclusive fixed rate)</span>
+                </td>
+            </tr>
+            @elseif(in_array($reservation->room->room_type, ['Family Room', 'Barkadahan Room']))
+            @php
+                $adults = $reservation->adults ?? $reservation->guests ?? 1;
+                $children = $reservation->children ?? 0;
+                $childrenAges = is_array($reservation->children_ages) ? $reservation->children_ages : (json_decode($reservation->children_ages ?? '[]', true) ?: []);
+                $freeChildren = 0;
+                $payingChildren = 0;
+                foreach ($childrenAges as $a) {
+                    if ((int)$a >= 7) $payingChildren++;
+                    else $freeChildren++;
+                }
+                $chargeableGuests = max(1, $adults + $payingChildren);
+            @endphp
             <tr class="item">
                 <td>Guests</td>
                 <td>
                     {{ $reservation->guests ?? 1 }} Guests
+                    <span style="color: #666; font-size: 13px;">({{ $adults }} Adult{{ $adults > 1 ? 's' : '' }}@if($children > 0), {{ $children }} Child{{ $children > 1 ? 'ren' : '' }}@if($freeChildren > 0) [{{ $freeChildren }} Free under 7]@endif @endif)</span>
+                    @if(($reservation->extra_guests ?? 0) > 0)
+                        <br>
+                        <span style="color: #bc9151; font-size: 13px; font-weight: bold;">
+                            ({{ $reservation->extra_guests }} Additional Bedding{{ $reservation->extra_guests > 1 ? 's' : '' }})
+                        </span>
+                    @endif
                     <br>
                     <span style="color: #666; font-size: 13px; font-style: italic;">
-                        (Room Minimum Capacity: {{ $reservation->room->min_occupancy }} Guests)
+                        (Room Capacity: {{ $reservation->room->min_occupancy }} - {{ $reservation->room->max_occupancy }} Guests)
                     </span>
                 </td>
             </tr>
-            <tr class="item last">
+            <tr class="item">
                 <td>Per Head Rate</td>
                 <td>
-                    ₱{{ number_format($reservation->room->price_per_head, 2) }} / head / night
+                    &#8369;{{ number_format($reservation->room->price_per_head, 2) }} / head / night
                     <br>
                     <span style="color: #666; font-size: 13px; font-style: italic;">
-                        ((₱{{ number_format($reservation->room->price_per_head, 2) }} × {{ $reservation->guests ?? 1 }} guests) × {{ $nights }} night{{ $nights > 1 ? 's' : '' }})
+                        ((&#8369;{{ number_format($reservation->room->price_per_head, 2) }} × {{ $chargeableGuests }} paying guests) × {{ $nights }} night{{ $nights > 1 ? 's' : '' }}@if($freeChildren > 0) + {{ $freeChildren }} Child Free @endif)
                     </span>
                 </td>
             </tr>
             @else
-            <tr class="item last">
-                <td>Nightly Rate</td>
+            <tr class="item">
+                <td>Guests</td>
                 <td>
-                    ₱{{ number_format($reservation->room->price_per_night, 2) }} / night
+                    {{ $reservation->guests ?? 1 }} Guests
+                    @if(($reservation->extra_guests ?? 0) > 0)
+                        <br>
+                        <span style="color: #bc9151; font-size: 13px; font-weight: bold;">
+                            ({{ $reservation->extra_guests }} Additional Bedding{{ $reservation->extra_guests > 1 ? 's' : '' }})
+                        </span>
+                    @endif
                     <br>
                     <span style="color: #666; font-size: 13px; font-style: italic;">
-                        (₱{{ number_format($reservation->room->price_per_night, 2) }} × {{ $nights }} night{{ $nights > 1 ? 's' : '' }})
+                        (Standard Capacity: {{ $reservation->room->max_occupancy }} Guests)
+                    </span>
+                </td>
+            </tr>
+            <tr class="item">
+                <td>Nightly Rate</td>
+                <td>
+                    &#8369;{{ number_format($reservation->room->price_per_night, 2) }} / night
+                    <br>
+                    <span style="color: #666; font-size: 13px; font-style: italic;">
+                        (&#8369;{{ number_format($reservation->room->price_per_night, 2) }} × {{ $nights }} night{{ $nights > 1 ? 's' : '' }})
+                    </span>
+                </td>
+            </tr>
+            @endif
+
+            @php
+                $extraBedRate = (float) ($reservation->room->extra_bed_price ?? 300.00);
+                $extraGuestsCount = (int) ($reservation->extra_guests ?: max(0, ($reservation->guests ?? 1) - $reservation->room->max_occupancy));
+                $extraCharge = (float) ($reservation->extra_bed_charge ?: ($extraGuestsCount * $extraBedRate * $nights));
+            @endphp
+
+            @if($extraGuestsCount > 0 && $extraCharge > 0)
+            <tr class="item">
+                <td>Additional Beddings</td>
+                <td>
+                    &#8369;{{ number_format($extraCharge, 2) }}
+                    <br>
+                    <span style="color: #666; font-size: 13px; font-style: italic;">
+                        ({{ $extraGuestsCount }} extra bedding{{ $extraGuestsCount > 1 ? 's' : '' }} × &#8369;{{ number_format($extraBedRate, 2) }} × {{ $nights }} night{{ $nights > 1 ? 's' : '' }})
                     </span>
                 </td>
             </tr>
             @endif
             <tr class="total">
                 <td></td>
-                <td>Total: ₱{{ number_format($reservation->total_amount, 2) }}</td>
+                <td>Total: &#8369;{{ number_format($reservation->total_amount, 2) }}</td>
             </tr>
         </table>
         <div style="margin-top: 50px; text-align: center; color: #999; font-size: 12px;">

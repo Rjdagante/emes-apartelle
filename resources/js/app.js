@@ -6,7 +6,11 @@ import '../css/app.css';
 import { createApp } from 'vue';
 import App from './App.vue';
 import router from './router';
+import { initGlobalScrollLock } from './utils/scrollLock';
 
 const app = createApp(App);
 app.use(router);
 app.mount('#app');
+
+// Initialize global background scroll lock for all modals across the app
+initGlobalScrollLock(router);

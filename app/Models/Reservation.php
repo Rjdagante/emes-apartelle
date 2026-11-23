@@ -29,17 +29,31 @@ class Reservation extends Model
 
     protected $fillable = [
         'user_id',
+        'guest_name',
         'room_id',
+        'package_id',
         'guests',
+        'adults',
+        'children',
+        'children_ages',
+        'extra_guests',
         'check_in',
         'check_out',
         'total_amount',
-        'status',
-        'payment_status',
-        'xendit_invoice_id',
+        'extra_bed_charge',
         'payment_option',
         'downpayment_amount',
+        'status',
+        'payment_status',
         'cancellation_reason',
+        'xendit_invoice_id',
+    ];
+
+    protected $casts = [
+        'children_ages' => 'array',
+        'extra_bed_charge' => 'decimal:2',
+        'total_amount' => 'decimal:2',
+        'downpayment_amount' => 'decimal:2',
     ];
 
     public function user()
@@ -50,6 +64,11 @@ class Reservation extends Model
     public function room()
     {
         return $this->belongsTo(Room::class);
+    }
+
+    public function package()
+    {
+        return $this->belongsTo(RoomPackage::class, 'package_id');
     }
 
     public function payments()

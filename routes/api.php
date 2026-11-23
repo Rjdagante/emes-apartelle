@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\RoomController;
+use App\Http\Controllers\Api\RoomPackageController;
 use App\Http\Controllers\Api\ReservationController;
 use App\Http\Controllers\Api\XenditWebhookController;
 use App\Http\Controllers\Api\AdminController;
@@ -11,6 +12,7 @@ use App\Http\Controllers\Api\SettingController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\DisputeController;
+use App\Http\Controllers\Api\AuditLogController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -32,6 +34,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/user/change-password', [AuthController::class, 'changePassword']);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/reservations/{id}/sync-payment', [ReservationController::class, 'syncPayment']);
+    Route::post('/reservations/{id}/reschedule', [ReservationController::class, 'reschedule']);
 Route::apiResource('reservations', ReservationController::class);
     Route::post('/reservations/{id}/cancel', [ReservationController::class, 'cancel']);
     
@@ -64,6 +67,8 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::post('/rooms', [RoomController::class, 'store']);
     Route::put('/rooms/{room}', [RoomController::class, 'update']);
     Route::delete('/rooms/{room}', [RoomController::class, 'destroy']);
+    Route::post('/rooms/{room}/promo', [RoomController::class, 'updatePromo']);
+    Route::delete('/rooms/{room}/promo', [RoomController::class, 'removePromo']);
     
     Route::post('/amenities', [AmenityController::class, 'store']);
     Route::put('/amenities/{amenity}', [AmenityController::class, 'update']);
@@ -89,9 +94,21 @@ Route::group(['prefix' => 'admin', 'middleware' => ['auth:sanctum']], function (
         Route::delete('/reviews/{id}/reply', [ReviewController::class, 'deleteReply']);
         Route::get('/disputes', [DisputeController::class, 'adminIndex']);
         Route::put('/disputes/{id}', [DisputeController::class, 'update']);
+        Route::get('/active-promos', [AdminController::class, 'getActivePromos']);
+        Route::post('/broadcast-promo', [AdminController::class, 'broadcastPromo']);
+        Route::get('/active-packages', [AdminController::class, 'getActivePackages']);
+        Route::post('/broadcast-package', [AdminController::class, 'broadcastPackage']);
         Route::get('/blocked-dates', [App\Http\Controllers\Api\BlockedDateController::class, 'index']);
         Route::post('/blocked-dates', [App\Http\Controllers\Api\BlockedDateController::class, 'store']);
         Route::delete('/blocked-dates/{id}', [App\Http\Controllers\Api\BlockedDateController::class, 'destroy']);
+        
+        // Room Packages Management
+        Route::get('/room-packages', [RoomPackageController::class, 'index']);
+        Route::post('/room-packages', [RoomPackageController::class, 'store']);
+        Route::put('/room-packages/{id}', [RoomPackageController::class, 'update']);
+        Route::post('/room-packages/{id}', [RoomPackageController::class, 'update']);
+        Route::delete('/room-packages/{id}', [RoomPackageController::class, 'destroy']);
+        Route::patch('/room-packages/{id}/toggle', [RoomPackageController::class, 'toggleStatus']);
     });
 
     // strictly Admin-only operations
@@ -101,6 +118,9 @@ Route::group(['prefix' => 'admin', 'middleware' => ['auth:sanctum']], function (
         Route::delete('/staff/{id}', [AdminController::class, 'deleteStaff']);
         
         Route::get('/reports', [AdminController::class, 'getReports']);
+        Route::get('/reports/pdf', [AdminController::class, 'exportReportsPdf']);
+        Route::get('/audit-logs', [AuditLogController::class, 'index']);
+        Route::get('/audit-logs/export', [AuditLogController::class, 'export']);
         Route::post('/guests/{id}/suspend', [AdminController::class, 'suspendGuest']);
         Route::post('/guests/{id}/unsuspend', [AdminController::class, 'unsuspendGuest']);
         Route::get('/settings', [SettingController::class, 'index']);
@@ -112,3 +132,6 @@ Route::group(['prefix' => 'admin', 'middleware' => ['auth:sanctum']], function (
 Route::get('/settings/public', [SettingController::class, 'public']);
 Route::get('/chatbot-rules/public', [App\Http\Controllers\Api\ChatbotResponseController::class, 'public']);
 Route::get('/rooms/{roomId}/reviews', [ReviewController::class, 'index']);
+Route::get('/room-packages/public', [RoomPackageController::class, 'publicIndex']);
+Route::get('/room-packages/public/{id}', [RoomPackageController::class, 'show']);
+Route::get('/room-packages', [RoomPackageController::class, 'index']);

@@ -101,7 +101,7 @@ const handleSubmit = async () => {
 
 <style scoped>
 .auth-page { min-height: 100vh; position: relative; overflow: hidden; background: #0f172a; }
-.auth-bg-overlay { position: absolute; inset: 0; background: radial-gradient(circle at 20% 80%, rgba(188,145,81,0.12), transparent 50%), url('/images/unsplash/hero-resort.jpg') center/cover; filter: brightness(0.45) saturate(1.1); z-index: 1; }
+.auth-bg-overlay { position: absolute; inset: 0; background: radial-gradient(circle at 20% 80%, rgba(188,145,81,0.12), transparent 50%), url('/images/emes-building.jpg') center/cover no-repeat; filter: brightness(0.45) saturate(1.1); z-index: 1; }
 .auth-card-container { position: relative; z-index: 2; width: 100%; max-width: 820px; padding: 1.25rem; }
 .auth-card { background: #fff; border-radius: 20px; box-shadow: 0 25px 60px -12px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.08); }
 

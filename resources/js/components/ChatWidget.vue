@@ -1,5 +1,5 @@
 <template>
-  <div v-if="isWidgetVisible" class="chat-widget position-fixed bottom-0 end-0 m-4 z-3 d-flex flex-column align-items-end">
+  <div v-if="isWidgetVisible" class="chat-widget position-fixed bottom-0 end-0 m-4 d-flex flex-column align-items-end" style="z-index: 1070;">
     <!-- Chat Options Menu -->
     <transition name="slide-up">
       <div v-if="showOptions && !isOpen" class="chat-options-card card border-0 shadow-lg mb-3 overflow-hidden" style="width: 320px;">
@@ -636,6 +636,10 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.chat-widget {
+  z-index: 1070;
+}
+
 .chat-window {
   border-radius: 12px;
 }

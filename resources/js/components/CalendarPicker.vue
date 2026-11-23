@@ -21,11 +21,43 @@
           'disabled': isDisabled(dateObj),
           'empty': !dateObj,
           'today': isToday(dateObj),
-          'booked': isBooked(dateObj)
+          'booked': isBooked(dateObj),
+          'blocked': isBlocked(dateObj)
         }"
+        :title="getDateTitle(dateObj)"
         @click="selectDate(dateObj)"
+        @mouseenter="onDateHover(dateObj)"
+        @mouseleave="onDateLeave"
       >
         <span v-if="dateObj">{{ dateObj.day }}</span>
+      </div>
+    </div>
+
+    <!-- Active reason notice (shown on hover or tap) -->
+    <div 
+      v-if="currentNotice" 
+      class="calendar-reason-banner mt-2 p-2 rounded-3 d-flex align-items-center gap-2 animate-fade-in"
+      :class="currentNotice.isBlocked ? 'bg-warning-subtle text-warning-emphasis border border-warning-subtle' : 'bg-danger-subtle text-danger border border-danger-subtle'"
+    >
+      <i :class="currentNotice.isBlocked ? 'bi bi-slash-circle-fill text-warning' : 'bi bi-calendar-x-fill text-danger'" class="flex-shrink-0"></i>
+      <div class="x-small text-truncate" style="line-height: 1.25;">
+        <span class="fw-bold">{{ currentNotice.title }}:</span> {{ currentNotice.text }}
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="calendar-legend d-flex justify-content-center align-items-center gap-3 pt-2 mt-2 border-top" style="font-size: 0.65rem;">
+      <div class="d-flex align-items-center gap-1 text-muted">
+        <span class="legend-dot bg-danger"></span>
+        <span>Booked</span>
+      </div>
+      <div class="d-flex align-items-center gap-1 text-muted">
+        <span class="legend-dot bg-warning"></span>
+        <span>Blocked</span>
+      </div>
+      <div class="d-flex align-items-center gap-1 text-muted">
+        <span class="legend-dot bg-gold"></span>
+        <span>Selected</span>
       </div>
     </div>
   </div>
@@ -37,7 +69,7 @@ import { ref, computed, watch } from 'vue';
 const props = defineProps({
   modelValue: String, // YYYY-MM-DD
   disabledDates: {
-    type: Array, // Array of { start: 'YYYY-MM-DD', end: 'YYYY-MM-DD' }
+    type: Array, // Array of { start: 'YYYY-MM-DD', end: 'YYYY-MM-DD', type: 'blocked'|'booked', reason: '' }
     default: () => []
   },
   minDate: {
@@ -99,9 +131,58 @@ const formatToYMD = (date) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-const selectDate = (dateObj) => {
-  if (!dateObj || isDisabled(dateObj)) return;
-  emit('update:modelValue', formatToYMD(dateObj.fullDate));
+const hoveredNotice = ref(null);
+const clickedNotice = ref(null);
+
+const currentNotice = computed(() => {
+  return hoveredNotice.value || clickedNotice.value || null;
+});
+
+const parseLocalDate = (dateVal) => {
+  if (!dateVal) return null;
+  if (dateVal instanceof Date) {
+    return new Date(dateVal.getFullYear(), dateVal.getMonth(), dateVal.getDate());
+  }
+  const str = String(dateVal).trim();
+  const match = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (match) {
+    return new Date(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10));
+  }
+  const d = new Date(str.replace(' ', 'T'));
+  return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
+};
+
+const getDisabledRange = (dateObj) => {
+  if (!dateObj || !props.disabledDates || !props.disabledDates.length) return null;
+  const d = parseLocalDate(dateObj.fullDate);
+  if (!d) return null;
+
+  return props.disabledDates.find(range => {
+    const start = parseLocalDate(range.check_in || range.start || range.start_date);
+    const end = parseLocalDate(range.check_out || range.end || range.end_date);
+    if (!start || !end) return false;
+
+    // Handle single day range edge-case: if check_in equals check_out, treat end as start + 1 day
+    const effectiveEnd = end <= start ? new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1) : end;
+    
+    if (props.isCheckout) {
+      // For check-out, a date is disabled if the night before it is occupied
+      return d > start && d <= effectiveEnd;
+    } else {
+      // For check-in, a date is disabled if the night itself is occupied
+      return d >= start && d < effectiveEnd;
+    }
+  });
+};
+
+const isBlocked = (dateObj) => {
+  const range = getDisabledRange(dateObj);
+  return !!(range && range.type === 'blocked');
+};
+
+const isBooked = (dateObj) => {
+  const range = getDisabledRange(dateObj);
+  return !!(range && range.type !== 'blocked');
 };
 
 const isSelected = (dateObj) => {
@@ -124,29 +205,68 @@ const isDisabled = (dateObj) => {
   // Check max date
   if (props.maxDate && dStr > props.maxDate) return true;
   
-  // Check booked dates
-  return isBooked(dateObj);
+  // Check booked/blocked dates
+  return !!getDisabledRange(dateObj);
 };
 
-const isBooked = (dateObj) => {
-  if (!dateObj || !props.disabledDates.length) return false;
-  const d = dateObj.fullDate;
-  d.setHours(0, 0, 0, 0);
+const getDateTitle = (dateObj) => {
+  if (!dateObj) return '';
+  const dStr = formatToYMD(dateObj.fullDate);
+  if (props.minDate && dStr < props.minDate) return 'Past date';
+  if (props.maxDate && dStr > props.maxDate) return 'Date unavailable';
 
-  return props.disabledDates.some(range => {
-    const start = new Date(range.check_in || range.start);
-    const end = new Date(range.check_out || range.end);
-    start.setHours(0, 0, 0, 0);
-    end.setHours(0, 0, 0, 0);
-    
-    if (props.isCheckout) {
-      // For check-out, a date is disabled if the night before it is occupied
-      return d > start && d <= end;
-    } else {
-      // For check-in, a date is disabled if the night itself is occupied
-      return d >= start && d < end;
+  const range = getDisabledRange(dateObj);
+  if (range) {
+    if (range.type === 'blocked') {
+      return range.reason ? `Blocked: ${range.reason}` : 'Blocked by management';
     }
-  });
+    return 'Already Booked';
+  }
+  return '';
+};
+
+const buildNotice = (dateObj, range) => {
+  if (!dateObj || !range) return null;
+  const dateStr = dateObj.fullDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const isBlockedType = range.type === 'blocked';
+  return {
+    isBlocked: isBlockedType,
+    title: isBlockedType ? `${dateStr} Blocked` : `${dateStr} Booked`,
+    text: isBlockedType ? (range.reason || 'Unavailable for booking') : 'Reserved by another guest'
+  };
+};
+
+const selectDate = (dateObj) => {
+  if (!dateObj) return;
+
+  if (isDisabled(dateObj)) {
+    const range = getDisabledRange(dateObj);
+    if (range) {
+      clickedNotice.value = buildNotice(dateObj, range);
+    }
+    return;
+  }
+
+  clickedNotice.value = null;
+  hoveredNotice.value = null;
+  emit('update:modelValue', formatToYMD(dateObj.fullDate));
+};
+
+const onDateHover = (dateObj) => {
+  if (!dateObj) {
+    hoveredNotice.value = null;
+    return;
+  }
+  const range = getDisabledRange(dateObj);
+  if (range) {
+    hoveredNotice.value = buildNotice(dateObj, range);
+  } else {
+    hoveredNotice.value = null;
+  }
+};
+
+const onDateLeave = () => {
+  hoveredNotice.value = null;
 };
 
 watch(() => props.modelValue, (newVal) => {
@@ -219,12 +339,35 @@ watch(() => props.modelValue, (newVal) => {
 }
 
 .calendar-date.booked {
-  color: #F87171; /* Red 400 */
-  background-color: #FEF2F2; /* Red 50 */
-  text-decoration: line-through;
+  color: #F87171 !important;
+  background-color: #FEF2F2 !important;
+  text-decoration: line-through !important;
+  cursor: not-allowed !important;
 }
 
-.calendar-date.today:not(.selected) {
+.calendar-date.blocked {
+  color: #B45309 !important;
+  background-color: #FEF3C7 !important;
+  text-decoration: line-through !important;
+  cursor: not-allowed !important;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.legend-dot.bg-gold {
+  background-color: var(--primary-gold);
+}
+
+.calendar-reason-banner {
+  transition: all 0.2s ease-in-out;
+}
+
+.calendar-date.today:not(.selected):not(.blocked):not(.booked) {
   border: 2px solid var(--primary-gold-subtle);
   color: var(--primary-gold);
 }

@@ -19,6 +19,8 @@ class AuthController extends Controller
 {
     public function register(Request $request)
     {
+        $maxBirthdate = Carbon::today()->subYears(16)->format('Y-m-d');
+
         $request->validate([
             'first_name' => ['required', 'string', 'max:255'],
             'last_name' => ['required', 'string', 'max:255'],
@@ -28,8 +30,10 @@ class AuthController extends Controller
             'address' => ['required', 'string'],
             'city' => ['required', 'string', 'max:255'],
             'zip_code' => ['required', 'string', 'max:20'],
-            'birthdate' => ['required', 'date'],
+            'birthdate' => ['required', 'date', 'before_or_equal:' . $maxBirthdate],
             'gender' => ['required', 'in:male,female,other'],
+        ], [
+            'birthdate.before_or_equal' => 'You must be at least 16 years old to create an account.',
         ]);
 
         $user = User::create([

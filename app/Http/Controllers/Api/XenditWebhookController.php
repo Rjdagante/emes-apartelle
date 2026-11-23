@@ -34,7 +34,7 @@ class XenditWebhookController extends Controller
                 $reservationId = explode('-', $externalId)[0];
                 $reservation = Reservation::find($reservationId);
                 if ($reservation) {
-                    $isExtension = str_contains($externalId, '-ext-');
+                    $isAdditional = str_contains($externalId, '-ext-') || str_contains($externalId, '-resched-');
                     
                     // 1. Determine payment amount
                     $paidAmount = $payload['paid_amount'] ?? $payload['amount'] ?? 0;
@@ -51,9 +51,9 @@ class XenditWebhookController extends Controller
                         ->first();
 
                     if (!$exists) {
-                        // Check for MANUAL- payment only if NOT a stay extension
+                        // Check for MANUAL- payment only if NOT a stay extension or reschedule
                         $manualPayment = null;
-                        if (!$isExtension) {
+                        if (!$isAdditional) {
                             $manualPayment = Payment::where('reservation_id', $reservation->id)
                                 ->where('paymongo_payment_id', 'LIKE', 'MANUAL-%')
                                 ->where('status', 'Succeeded')

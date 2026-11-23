@@ -1,11 +1,29 @@
 <template>
   <div class="guests-view">
     <div class="card border-0 shadow-sm rounded-4 overflow-hidden animate-fade-up">
-      <div class="card-header bg-white py-4 px-4 border-0 d-flex justify-content-between align-items-center">
+      <div class="card-header bg-white py-4 px-4 border-0 d-flex justify-content-between align-items-center flex-wrap gap-3">
         <h5 class="serif-font fw-bold mb-0 text-secondary-dark">All Guests</h5>
-        <div class="input-group input-group-sm" style="width: 250px;">
-          <span class="input-group-text bg-light border-0"><i class="bi bi-search"></i></span>
-          <input type="text" class="form-control bg-light border-0" placeholder="Search guests..." v-model="searchQuery">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <button 
+            class="btn btn-gold btn-sm px-3 py-2 fw-bold text-uppercase rounded-3 shadow-gold-sm d-flex align-items-center gap-2"
+            @click="openPromoBroadcastModal()"
+            title="Broadcast active promotions to guests"
+          >
+            <i class="bi bi-megaphone-fill"></i>
+            <span>Send Promo to Guests</span>
+          </button>
+          <button 
+            class="btn btn-outline-gold btn-sm px-3 py-2 fw-bold text-uppercase rounded-3 d-flex align-items-center gap-2"
+            @click="openPackageBroadcastModal()"
+            title="Broadcast active room packages to guests"
+          >
+            <i class="bi bi-box2-heart-fill"></i>
+            <span>Send Packages to Guests</span>
+          </button>
+          <div class="input-group input-group-sm" style="width: 240px;">
+            <span class="input-group-text bg-light border-0"><i class="bi bi-search"></i></span>
+            <input type="text" class="form-control bg-light border-0" placeholder="Search guests..." v-model="searchQuery">
+          </div>
         </div>
       </div>
       <div class="card-body p-0">
@@ -50,6 +68,12 @@
                 </td>
                 <td class="pe-4 text-end">
                     <div class="d-flex justify-content-end gap-2">
+                      <button class="btn btn-action-promo" title="Send Promo to this Guest" @click="openPromoBroadcastModal(guest)">
+                        <i class="bi bi-tag-fill"></i>
+                      </button>
+                      <button class="btn btn-action-package" title="Send Package to this Guest" @click="openPackageBroadcastModal(guest)">
+                        <i class="bi bi-box2-heart-fill"></i>
+                      </button>
                       <button class="btn btn-action-view" title="View Profile" @click="viewGuest(guest)">
                         <i class="bi bi-person-badge"></i>
                       </button>
@@ -132,8 +156,26 @@
             </div>
           </div>
         </div>
-        <div class="modal-footer border-top p-4 d-flex justify-content-end bg-light">
-          <button type="button" @click="showModal = false" class="btn btn-gold px-5 py-2 rounded-pill shadow-gold fw-bold text-uppercase">Close</button>
+        <div class="modal-footer border-top p-4 d-flex justify-content-between align-items-center flex-wrap gap-2 bg-light">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <button 
+              type="button" 
+              class="btn btn-outline-warning text-dark btn-sm px-3 py-2 rounded-3 fw-bold d-flex align-items-center gap-2"
+              @click="showModal = false; openPromoBroadcastModal(selectedGuest)"
+            >
+              <i class="bi bi-megaphone-fill text-gold"></i>
+              <span>Send Promo</span>
+            </button>
+            <button 
+              type="button" 
+              class="btn btn-outline-gold btn-sm px-3 py-2 rounded-3 fw-bold d-flex align-items-center gap-2"
+              @click="showModal = false; openPackageBroadcastModal(selectedGuest)"
+            >
+              <i class="bi bi-box2-heart-fill"></i>
+              <span>Send Packages</span>
+            </button>
+          </div>
+          <button type="button" @click="showModal = false" class="btn btn-gold px-4 py-2 rounded-pill shadow-gold fw-bold text-uppercase">Close</button>
         </div>
       </div>
     </div>
@@ -179,6 +221,318 @@
         </div>
       </div>
     </div>
+
+    <!-- Promo Broadcast Modal -->
+    <div v-if="showPromoModal" class="modal-overlay d-flex align-items-center justify-content-center p-3" style="z-index: 1060;">
+      <div class="modal-card bg-white rounded-4 shadow-xl w-100 overflow-hidden animate-fade-up" style="max-width: 580px;">
+        <div class="modal-header border-bottom p-4 d-flex justify-content-between align-items-center bg-light">
+          <div class="d-flex align-items-center gap-3">
+            <div class="avatar bg-gold text-white rounded-circle d-flex align-items-center justify-content-center shadow-sm" style="width: 44px; height: 44px;">
+              <i class="bi bi-megaphone-fill fs-5"></i>
+            </div>
+            <div>
+              <h5 class="serif-font fw-bold mb-0 text-secondary-dark">Send Promo to Guests</h5>
+              <small class="text-muted">Broadcast special room offers via email & in-app notification</small>
+            </div>
+          </div>
+          <button @click="showPromoModal = false" class="btn-close shadow-none" :disabled="sendingPromo"></button>
+        </div>
+
+        <div class="modal-body p-4" style="max-height: 520px; overflow-y: auto;">
+          <div v-if="loadingPromoData" class="text-center py-5">
+            <div class="spinner-border text-gold" role="status"></div>
+            <p class="text-muted mt-2 small">Loading active promotional rooms...</p>
+          </div>
+
+          <div v-else>
+            <!-- Active Promotions Preview -->
+            <div class="mb-4">
+              <label class="form-label fw-bold small text-muted text-uppercase mb-2 d-flex align-items-center justify-content-between">
+                <span>Active Room Promotions</span>
+                <span class="badge bg-gold-subtle text-gold fw-bold px-2 py-1">
+                  {{ promoData.promo_rooms?.length || 0 }} Offer(s) Available
+                </span>
+              </label>
+
+              <div v-if="promoData.promo_rooms && promoData.promo_rooms.length > 0" class="d-flex flex-column gap-2">
+                <div 
+                  v-for="room in promoData.promo_rooms" 
+                  :key="room.id"
+                  class="p-3 rounded-3 border bg-light d-flex align-items-center justify-content-between"
+                >
+                  <div>
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                      <span class="badge bg-danger text-white fw-bold">{{ room.promo_discount_percent }}% OFF</span>
+                      <strong class="text-secondary-dark">Room #{{ room.room_number }}</strong>
+                      <span class="text-muted small">({{ room.room_type }})</span>
+                    </div>
+                    <small class="text-muted">{{ room.promo_title }}</small>
+                  </div>
+                  <div class="text-end">
+                    <span class="text-decoration-line-through text-muted small d-block">₱{{ room.original_price }}</span>
+                    <strong class="text-gold fs-6">₱{{ room.effective_price }}</strong>
+                    <small class="text-muted d-block" style="font-size: 0.72rem;">{{ room.pricing_unit }}</small>
+                  </div>
+                </div>
+              </div>
+
+              <div v-else class="alert alert-warning rounded-3 border-0 py-2 px-3 small d-flex align-items-center gap-2 mb-0">
+                <i class="bi bi-info-circle-fill text-warning fs-5"></i>
+                <div>
+                  No rooms currently have promo prices active in the Rooms section. You can still send this announcement, or toggle promo pricing on under <strong>Rooms</strong>.
+                </div>
+              </div>
+            </div>
+
+            <!-- Recipient Target -->
+            <div class="mb-3">
+              <label class="form-label fw-bold small text-muted text-uppercase mb-1">Recipient(s)</label>
+              <div class="p-3 rounded-3 border bg-light d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center gap-3">
+                  <div class="avatar bg-white border text-gold rounded-circle d-flex align-items-center justify-content-center" style="width: 36px; height: 36px;">
+                    <i class="bi bi-people-fill"></i>
+                  </div>
+                  <div>
+                    <strong class="d-block text-secondary-dark" v-if="targetGuest">
+                      {{ targetGuest.name || `${targetGuest.first_name} ${targetGuest.last_name}` }} (Individual Guest)
+                    </strong>
+                    <strong class="d-block text-secondary-dark" v-else>
+                      All Registered Guests
+                    </strong>
+                    <small class="text-muted" v-if="targetGuest">
+                      {{ targetGuest.email }}
+                    </small>
+                    <small class="text-muted" v-else>
+                      Will deliver to all {{ promoData.recipient_count || guests.length }} active registered guest accounts
+                    </small>
+                  </div>
+                </div>
+                <button 
+                  v-if="targetGuest" 
+                  class="btn btn-outline-secondary btn-sm rounded-pill px-3"
+                  @click="targetGuest = null"
+                  type="button"
+                >
+                  Send to All
+                </button>
+              </div>
+            </div>
+
+            <!-- Email Subject -->
+            <div class="mb-3">
+              <label class="form-label fw-bold small text-muted text-uppercase mb-1">Subject</label>
+              <input 
+                type="text" 
+                class="form-control rounded-3" 
+                v-model="promoSubject"
+                placeholder="Enter email subject"
+                :disabled="sendingPromo"
+              >
+            </div>
+
+            <!-- Message Body -->
+            <div class="mb-3">
+              <label class="form-label fw-bold small text-muted text-uppercase mb-1">Announcement Message</label>
+              <textarea 
+                class="form-control rounded-3" 
+                rows="4" 
+                v-model="promoMessage"
+                placeholder="Write the promotional message to be delivered to guests..."
+                :disabled="sendingPromo"
+              ></textarea>
+              <small class="text-muted mt-1 d-block">
+                <i class="bi bi-info-circle me-1"></i> A <strong>"View Rooms & Book Now"</strong> button linking to the rooms page is automatically included in the email and notification.
+              </small>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer border-top p-4 d-flex justify-content-between align-items-center bg-light">
+          <button 
+            type="button" 
+            @click="showPromoModal = false" 
+            class="btn btn-light px-4 py-2 rounded-3 text-secondary fw-semibold"
+            :disabled="sendingPromo"
+          >
+            Cancel
+          </button>
+
+          <button 
+            type="button" 
+            @click="sendPromoBroadcast" 
+            class="btn btn-gold px-4 py-2 rounded-3 shadow-gold-sm fw-bold d-flex align-items-center gap-2"
+            :disabled="sendingPromo || loadingPromoData || !promoSubject || !promoMessage"
+          >
+            <span v-if="sendingPromo" class="spinner-border spinner-border-sm" role="status"></span>
+            <i v-else class="bi bi-send-fill"></i>
+            <span>{{ sendingPromo ? 'Sending...' : (targetGuest ? 'Send to Guest' : 'Send Promo Now') }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Package Broadcast Modal -->
+    <div v-if="showPackageModal" class="modal-overlay d-flex align-items-center justify-content-center p-3" style="z-index: 1060;">
+      <div class="modal-card bg-white rounded-4 shadow-xl w-100 overflow-hidden animate-fade-up" style="max-width: 600px;">
+        <div class="modal-header border-bottom p-4 d-flex justify-content-between align-items-center bg-light">
+          <div class="d-flex align-items-center gap-3">
+            <div class="avatar bg-gold text-white rounded-circle d-flex align-items-center justify-content-center shadow-sm" style="width: 44px; height: 44px;">
+              <i class="bi bi-box2-heart-fill fs-5"></i>
+            </div>
+            <div>
+              <h5 class="serif-font fw-bold mb-0 text-secondary-dark">Send Packages to Guests</h5>
+              <small class="text-muted">Share active room packages via email &amp; in-app notification</small>
+            </div>
+          </div>
+          <button @click="showPackageModal = false" class="btn-close shadow-none" :disabled="sendingPackage"></button>
+        </div>
+
+        <div class="modal-body p-4" style="max-height: 520px; overflow-y: auto;">
+          <div v-if="loadingPackageData" class="text-center py-5">
+            <div class="spinner-border text-gold" role="status"></div>
+            <p class="text-muted mt-2 small">Loading active room packages...</p>
+          </div>
+
+          <div v-else>
+            <!-- Active Packages Preview & Selection -->
+            <div class="mb-4">
+              <label class="form-label fw-bold small text-muted text-uppercase mb-2 d-flex align-items-center justify-content-between">
+                <span>Active Room Packages</span>
+                <span class="badge bg-gold-subtle text-gold fw-bold px-2 py-1">
+                  {{ selectedPackageIds.length }} of {{ packageData.packages?.length || 0 }} Selected
+                </span>
+              </label>
+
+              <div v-if="packageData.packages && packageData.packages.length > 0" class="d-flex flex-column gap-2">
+                <label
+                  v-for="pkg in packageData.packages"
+                  :key="pkg.id"
+                  class="p-3 rounded-3 border bg-light d-flex align-items-center justify-content-between gap-3 mb-0"
+                  style="cursor: pointer;"
+                >
+                  <div class="d-flex align-items-start gap-2.5">
+                    <input
+                      type="checkbox"
+                      class="form-check-input mt-1"
+                      :value="pkg.id"
+                      v-model="selectedPackageIds"
+                      :disabled="sendingPackage"
+                    >
+                    <div>
+                      <div class="d-flex align-items-center flex-wrap gap-2 mb-0.5">
+                        <strong class="text-secondary-dark">{{ pkg.name }}</strong>
+                        <span v-if="pkg.duration" class="badge bg-gold-subtle text-gold fw-bold" style="font-size: 0.68rem;">{{ pkg.duration }}</span>
+                        <span v-if="pkg.pax" class="badge bg-white border text-muted fw-semibold" style="font-size: 0.68rem;">{{ pkg.pax }}</span>
+                      </div>
+                      <small class="text-muted d-block">
+                        <template v-if="pkg.room_type_label || pkg.room_number">
+                          {{ pkg.room_type_label }}<template v-if="pkg.room_number"> #{{ pkg.room_number }}</template>
+                        </template>
+                        <template v-if="pkg.tagline"> · {{ pkg.tagline }}</template>
+                      </small>
+                    </div>
+                  </div>
+                  <div class="text-end flex-shrink-0">
+                    <strong class="text-gold fs-6">₱{{ formatPrice(pkg.price) }}</strong>
+                    <small v-if="pkg.tour_type" class="text-muted d-block" style="font-size: 0.7rem;">{{ pkg.tour_type }}</small>
+                  </div>
+                </label>
+              </div>
+
+              <div v-else class="alert alert-warning rounded-3 border-0 py-2 px-3 small d-flex align-items-center gap-2 mb-0">
+                <i class="bi bi-info-circle-fill text-warning fs-5"></i>
+                <div>
+                  No active room packages found. You can still send this announcement, or activate packages under <strong>Rooms</strong>.
+                </div>
+              </div>
+            </div>
+
+            <!-- Recipient Target -->
+            <div class="mb-3">
+              <label class="form-label fw-bold small text-muted text-uppercase mb-1">Recipient(s)</label>
+              <div class="p-3 rounded-3 border bg-light d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center gap-3">
+                  <div class="avatar bg-white border text-gold rounded-circle d-flex align-items-center justify-content-center" style="width: 36px; height: 36px;">
+                    <i class="bi bi-people-fill"></i>
+                  </div>
+                  <div>
+                    <strong class="d-block text-secondary-dark" v-if="packageTargetGuest">
+                      {{ packageTargetGuest.name || `${packageTargetGuest.first_name} ${packageTargetGuest.last_name}` }} (Individual Guest)
+                    </strong>
+                    <strong class="d-block text-secondary-dark" v-else>
+                      All Registered Guests
+                    </strong>
+                    <small class="text-muted" v-if="packageTargetGuest">
+                      {{ packageTargetGuest.email }}
+                    </small>
+                    <small class="text-muted" v-else>
+                      Will deliver to all {{ packageData.recipient_count || guests.length }} active registered guest accounts
+                    </small>
+                  </div>
+                </div>
+                <button 
+                  v-if="packageTargetGuest" 
+                  class="btn btn-outline-secondary btn-sm rounded-pill px-3"
+                  @click="packageTargetGuest = null"
+                  type="button"
+                >
+                  Send to All
+                </button>
+              </div>
+            </div>
+
+            <!-- Email Subject -->
+            <div class="mb-3">
+              <label class="form-label fw-bold small text-muted text-uppercase mb-1">Subject</label>
+              <input 
+                type="text" 
+                class="form-control rounded-3" 
+                v-model="packageSubject"
+                placeholder="Enter email subject"
+                :disabled="sendingPackage"
+              >
+            </div>
+
+            <!-- Message Body -->
+            <div class="mb-3">
+              <label class="form-label fw-bold small text-muted text-uppercase mb-1">Announcement Message</label>
+              <textarea 
+                class="form-control rounded-3" 
+                rows="4" 
+                v-model="packageMessage"
+                placeholder="Write the package offer message to be delivered to guests..."
+                :disabled="sendingPackage"
+              ></textarea>
+              <small class="text-muted mt-1 d-block">
+                <i class="bi bi-info-circle me-1"></i> Selected package details and a <strong>"View Packages &amp; Book Now"</strong> button are automatically included.
+              </small>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer border-top p-4 d-flex justify-content-between align-items-center bg-light">
+          <button 
+            type="button" 
+            @click="showPackageModal = false" 
+            class="btn btn-light px-4 py-2 rounded-3 text-secondary fw-semibold"
+            :disabled="sendingPackage"
+          >
+            Cancel
+          </button>
+
+          <button 
+            type="button" 
+            @click="sendPackageBroadcast" 
+            class="btn btn-gold px-4 py-2 rounded-3 shadow-gold-sm fw-bold d-flex align-items-center gap-2"
+            :disabled="sendingPackage || loadingPackageData || !packageSubject || !packageMessage"
+          >
+            <span v-if="sendingPackage" class="spinner-border spinner-border-sm" role="status"></span>
+            <i v-else class="bi bi-send-fill"></i>
+            <span>{{ sendingPackage ? 'Sending...' : (packageTargetGuest ? 'Send to Guest' : 'Send Packages Now') }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -198,6 +552,33 @@ const loading = ref(true);
 const guestHistory = ref([]);
 const selectedGuest = ref(null);
 const guests = ref([]);
+
+const showPromoModal = ref(false);
+const loadingPromoData = ref(false);
+const sendingPromo = ref(false);
+const targetGuest = ref(null);
+const promoData = ref({
+  promo_rooms: [],
+  recipient_count: 0,
+  default_subject: '',
+  default_message: '',
+});
+const promoSubject = ref('');
+const promoMessage = ref('');
+
+const showPackageModal = ref(false);
+const loadingPackageData = ref(false);
+const sendingPackage = ref(false);
+const packageTargetGuest = ref(null);
+const selectedPackageIds = ref([]);
+const packageData = ref({
+  packages: [],
+  recipient_count: 0,
+  default_subject: '',
+  default_message: '',
+});
+const packageSubject = ref('');
+const packageMessage = ref('');
 
 const fetchGuests = async () => {
   try {
@@ -371,6 +752,123 @@ const unsuspendGuestAction = async (guest) => {
     }
   }
 };
+
+const openPromoBroadcastModal = async (guest = null) => {
+  targetGuest.value = guest;
+  showPromoModal.value = true;
+  loadingPromoData.value = true;
+
+  try {
+    const res = await axios.get('/api/admin/active-promos');
+    promoData.value = res.data;
+    promoSubject.value = res.data.default_subject || "Special Room Promotion Alert at EME's Apartelle!";
+    promoMessage.value = res.data.default_message || "Exciting news! We have exclusive promotional discounts currently available on selected rooms. Book now to enjoy special rates before availability runs out!";
+  } catch (err) {
+    console.error('Failed to load active promo data', err);
+    promoSubject.value = "Special Room Promotion Alert at EME's Apartelle!";
+    promoMessage.value = "Exciting news! We have exclusive promotional discounts currently available on selected rooms. Book now to enjoy special rates before availability runs out!";
+  } finally {
+    loadingPromoData.value = false;
+  }
+};
+
+const sendPromoBroadcast = async () => {
+  if (!promoSubject.value || !promoMessage.value) {
+    Swal.fire('Required Fields', 'Please provide a subject and announcement message.', 'warning');
+    return;
+  }
+
+  sendingPromo.value = true;
+  try {
+    const payload = {
+      subject: promoSubject.value,
+      message: promoMessage.value,
+      guest_id: targetGuest.value ? targetGuest.value.id : null,
+    };
+
+    const res = await axios.post('/api/admin/broadcast-promo', payload);
+
+    showPromoModal.value = false;
+
+    Swal.fire({
+      icon: 'success',
+      title: 'Promo Announcement Sent!',
+      text: res.data.message || 'Notification and email have been delivered successfully.',
+      confirmButtonColor: '#BC9151',
+    });
+  } catch (err) {
+    console.error('Failed to broadcast promo', err);
+    const msg = err.response?.data?.message || 'Failed to send promotional broadcast. Please check your network and mail settings.';
+    Swal.fire({
+      icon: 'error',
+      title: 'Sending Failed',
+      text: msg,
+      confirmButtonColor: '#BC9151',
+    });
+  } finally {
+    sendingPromo.value = false;
+  }
+};
+
+const openPackageBroadcastModal = async (guest = null) => {
+  packageTargetGuest.value = guest;
+  showPackageModal.value = true;
+  loadingPackageData.value = true;
+
+  try {
+    const res = await axios.get('/api/admin/active-packages');
+    packageData.value = res.data;
+    selectedPackageIds.value = (res.data.packages || []).map(p => p.id);
+    packageSubject.value = res.data.default_subject || "Exclusive Room Packages at EME's Apartelle!";
+    packageMessage.value = res.data.default_message || "Discover our curated room packages designed for a memorable and hassle-free stay! Book your preferred package now while slots are available.";
+  } catch (err) {
+    console.error('Failed to load active packages', err);
+    selectedPackageIds.value = [];
+    packageSubject.value = "Exclusive Room Packages at EME's Apartelle!";
+    packageMessage.value = "Discover our curated room packages designed for a memorable and hassle-free stay! Book your preferred package now while slots are available.";
+  } finally {
+    loadingPackageData.value = false;
+  }
+};
+
+const sendPackageBroadcast = async () => {
+  if (!packageSubject.value || !packageMessage.value) {
+    Swal.fire('Required Fields', 'Please provide a subject and announcement message.', 'warning');
+    return;
+  }
+
+  sendingPackage.value = true;
+  try {
+    const payload = {
+      subject: packageSubject.value,
+      message: packageMessage.value,
+      guest_id: packageTargetGuest.value ? packageTargetGuest.value.id : null,
+      package_ids: selectedPackageIds.value,
+    };
+
+    const res = await axios.post('/api/admin/broadcast-package', payload);
+
+    showPackageModal.value = false;
+
+    Swal.fire({
+      icon: 'success',
+      title: 'Package Offer Sent!',
+      text: res.data.message || 'Package notification and email have been delivered successfully.',
+      confirmButtonColor: '#BC9151',
+    });
+  } catch (err) {
+    console.error('Failed to broadcast packages', err);
+    const msg = err.response?.data?.message || 'Failed to send package broadcast. Please check your network and mail settings.';
+    Swal.fire({
+      icon: 'error',
+      title: 'Sending Failed',
+      text: msg,
+      confirmButtonColor: '#BC9151',
+    });
+  } finally {
+    sendingPackage.value = false;
+  }
+};
 </script>
 
 <script>
@@ -430,7 +928,22 @@ export default {
   transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(188, 145, 81, 0.3);
 }
-.btn-action-view, .btn-action-history {
+
+.btn-outline-gold {
+  color: #9A7640;
+  border: 1.5px solid #BC9151;
+  background: transparent;
+  transition: all 0.3s ease;
+}
+
+.btn-outline-gold:hover {
+  background: linear-gradient(135deg, var(--primary-gold) 0%, #9A7640 100%);
+  color: white !important;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(188, 145, 81, 0.25);
+}
+
+.btn-action-view, .btn-action-history, .btn-action-promo, .btn-action-package {
   width: 38px;
   height: 38px;
   border-radius: 12px;
@@ -440,6 +953,34 @@ export default {
   border: none;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   font-size: 1.1rem;
+}
+
+.btn-action-package {
+  background-color: #e0e7ff;
+  color: #4f46e5;
+}
+
+.btn-action-package:hover {
+  background-color: #4f46e5;
+  color: white;
+  transform: translateY(-3px) rotate(-8deg);
+  box-shadow: 0 5px 15px rgba(79, 70, 229, 0.3);
+}
+
+.btn-action-promo {
+  background-color: #fef3c7;
+  color: #d97706;
+}
+
+.btn-action-promo:hover {
+  background-color: #d97706;
+  color: white;
+  transform: translateY(-3px) rotate(8deg);
+  box-shadow: 0 5px 15px rgba(217, 119, 6, 0.3);
+}
+
+.shadow-gold-sm {
+  box-shadow: 0 4px 10px rgba(188, 145, 81, 0.25);
 }
 
 .btn-action-view {

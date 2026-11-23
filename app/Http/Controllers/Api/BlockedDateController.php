@@ -34,8 +34,8 @@ class BlockedDateController extends Controller
         ]);
 
         // Formats to match standard database datetime
-        $startDate = \Carbon\Carbon::parse($request->start_date)->format('Y-m-d H:i:s');
-        $endDate = \Carbon\Carbon::parse($request->end_date)->format('Y-m-d H:i:s');
+        $startDate = \Carbon\Carbon::parse($request->start_date)->startOfDay()->format('Y-m-d H:i:s');
+        $endDate = \Carbon\Carbon::parse($request->end_date)->startOfDay()->format('Y-m-d H:i:s');
 
         $block = BlockedDate::create([
             'room_id' => $request->room_id,

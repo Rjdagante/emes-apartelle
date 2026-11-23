@@ -70,11 +70,13 @@
               <template v-else>
                 <!-- Notifications Dropdown -->
                 <div class="dropdown me-2">
-                  <button class="btn border-0 position-relative p-2 shadow-none" type="button" data-bs-toggle="dropdown" aria-expanded="false" :class="isNavbarScrolled ? 'text-dark' : 'text-white'">
-                    <i class="bi bi-bell fs-5"></i>
-                    <span v-if="unreadCount > 0" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger shadow-sm" style="font-size: 0.6rem; padding: 0.25em 0.5em;">
-                      {{ unreadCount > 9 ? '9+' : unreadCount }}
-                    </span>
+                  <button class="btn border-0 p-1 shadow-none d-flex align-items-center justify-content-center" type="button" data-bs-toggle="dropdown" aria-expanded="false" :class="isNavbarScrolled ? 'text-dark' : 'text-white'" title="Notifications">
+                    <div class="position-relative d-inline-flex align-items-center justify-content-center" style="width: 24px; height: 24px;">
+                      <i class="bi bi-bell fs-5"></i>
+                      <span v-if="unreadCount > 0" class="position-absolute badge rounded-pill bg-danger shadow-sm" style="top: -4px; right: -8px; font-size: 0.6rem; padding: 0.2em 0.45em; min-width: 17px; height: 17px; display: inline-flex; align-items: center; justify-content: center;">
+                        {{ unreadCount > 99 ? '99+' : unreadCount }}
+                      </span>
+                    </div>
                   </button>
                   <div class="dropdown-menu dropdown-menu-end shadow-xl border-0 mt-3 p-0 rounded-4 animate-fade-up overflow-hidden" style="width: 320px; max-height: 450px;">
                     <div class="p-3 border-bottom d-flex justify-content-between align-items-center bg-light-subtle">

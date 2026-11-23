@@ -16,12 +16,18 @@ class RoomController extends Controller
     /**
      * Get booked date ranges for a specific room.
      */
-    public function roomBookedDates($id)
+    public function roomBookedDates(Request $request, $id)
     {
-        $dates = Reservation::where('room_id', $id)
+        $excludeId = $request->query('exclude_reservation_id');
+        $query = Reservation::where('room_id', $id)
             ->whereIn('status', ['pending', 'confirmed', 'checked-in'])
-            ->where('check_out', '>=', now())
-            ->get(['check_in', 'check_out'])
+            ->where('check_out', '>=', now());
+
+        if ($excludeId) {
+            $query->where('id', '!=', $excludeId);
+        }
+
+        $dates = $query->get(['check_in', 'check_out'])
             ->map(function ($res) {
                 return [
                     'check_in' => $res->check_in,
@@ -37,12 +43,13 @@ class RoomController extends Controller
                   ->orWhereNull('room_id');
             })
             ->where('end_date', '>=', now())
-            ->get(['start_date as check_in', 'end_date as check_out'])
+            ->get(['start_date as check_in', 'end_date as check_out', 'reason'])
             ->map(function ($block) {
                 return [
                     'check_in' => $block->check_in,
                     'check_out' => $block->check_out,
                     'type' => 'blocked',
+                    'reason' => $block->reason ?: null,
                 ];
             })
             ->toArray();
@@ -56,46 +63,108 @@ class RoomController extends Controller
      */
     public function allBookedDates()
     {
-        $reservations = Cache::remember('all_booked_dates', 120, function () {
-            $resData = Reservation::whereIn('status', ['pending', 'confirmed', 'checked-in'])
+        $unavailableRanges = Cache::remember('all_booked_dates', 120, function () {
+            $rooms = Room::where('status', '!=', 'unavailable')->pluck('id')->toArray();
+            $totalRooms = count($rooms);
+            if ($totalRooms === 0) {
+                return [];
+            }
+
+            $result = [];
+
+            // 1. All Global Blocked Dates (room_id is null) directly block the entire property
+            $globalBlocks = \App\Models\BlockedDate::whereNull('room_id')
+                ->where('end_date', '>=', now())
+                ->get();
+
+            foreach ($globalBlocks as $gb) {
+                $result[] = [
+                    'check_in' => $gb->start_date,
+                    'check_out' => $gb->end_date,
+                    'type' => 'blocked',
+                    'reason' => $gb->reason ?: 'Blocked by administration',
+                ];
+            }
+
+            // 2. Individual reservations and room-specific blocks
+            $activeReservations = Reservation::whereIn('status', ['pending', 'confirmed', 'checked-in'])
                 ->where('check_out', '>=', now())
-                ->get(['room_id', 'check_in', 'check_out'])
-                ->map(function ($res) {
-                    return [
-                        'room_id' => $res->room_id,
-                        'check_in' => $res->check_in,
-                        'check_out' => $res->check_out,
-                    ];
-                })
-                ->toArray();
+                ->whereIn('room_id', $rooms)
+                ->get(['room_id', 'check_in', 'check_out']);
 
-            // Fetch blocked dates
-            $blocked = \App\Models\BlockedDate::where('end_date', '>=', now())->get();
-            $rooms = Room::pluck('id')->toArray();
+            $roomBlocks = \App\Models\BlockedDate::whereNotNull('room_id')
+                ->where('end_date', '>=', now())
+                ->whereIn('room_id', $rooms)
+                ->get(['room_id', 'start_date', 'end_date', 'reason']);
 
-            foreach ($blocked as $block) {
-                if ($block->room_id) {
-                    $resData[] = [
-                        'room_id' => $block->room_id,
-                        'check_in' => $block->start_date,
-                        'check_out' => $block->end_date,
-                    ];
-                } else {
-                    // Global block: treat it as blocked for every single room in the database
-                    foreach ($rooms as $roomId) {
-                        $resData[] = [
-                            'room_id' => $roomId,
-                            'check_in' => $block->start_date,
-                            'check_out' => $block->end_date,
-                        ];
-                    }
+            $dateOccupiedRooms = [];
+
+            foreach ($activeReservations as $res) {
+                $start = \Carbon\Carbon::parse($res->check_in)->startOfDay();
+                $end = \Carbon\Carbon::parse($res->check_out)->startOfDay();
+                for ($d = $start->copy(); $d->lt($end); $d->addDay()) {
+                    $dStr = $d->toDateString();
+                    $dateOccupiedRooms[$dStr][$res->room_id] = 'booked';
                 }
             }
 
-            return $resData;
+            foreach ($roomBlocks as $block) {
+                $start = \Carbon\Carbon::parse($block->start_date)->startOfDay();
+                $end = \Carbon\Carbon::parse($block->end_date)->startOfDay();
+                for ($d = $start->copy(); $d->lt($end); $d->addDay()) {
+                    $dStr = $d->toDateString();
+                    $dateOccupiedRooms[$dStr][$block->room_id] = 'blocked';
+                }
+            }
+
+            // Find dates where ALL active rooms are occupied/blocked
+            $fullyOccupiedDates = [];
+            foreach ($dateOccupiedRooms as $dStr => $occupiedMap) {
+                if (count($occupiedMap) >= $totalRooms) {
+                    $hasOnlyBlocks = !in_array('booked', array_values($occupiedMap));
+                    $fullyOccupiedDates[$dStr] = $hasOnlyBlocks ? 'blocked' : 'booked';
+                }
+            }
+
+            ksort($fullyOccupiedDates);
+            $rangeStart = null;
+            $rangeEnd = null;
+            $rangeType = null;
+
+            foreach ($fullyOccupiedDates as $dStr => $type) {
+                $currentDate = \Carbon\Carbon::parse($dStr);
+                if ($rangeStart === null) {
+                    $rangeStart = $currentDate;
+                    $rangeEnd = $currentDate->copy()->addDay();
+                    $rangeType = $type;
+                } else if ($currentDate->equalTo($rangeEnd) && $rangeType === $type) {
+                    $rangeEnd = $currentDate->copy()->addDay();
+                } else {
+                    $result[] = [
+                        'check_in' => $rangeStart->toDateString(),
+                        'check_out' => $rangeEnd->toDateString(),
+                        'type' => $rangeType,
+                        'reason' => $rangeType === 'blocked' ? 'All rooms blocked by administration' : null,
+                    ];
+                    $rangeStart = $currentDate;
+                    $rangeEnd = $currentDate->copy()->addDay();
+                    $rangeType = $type;
+                }
+            }
+
+            if ($rangeStart !== null) {
+                $result[] = [
+                    'check_in' => $rangeStart->toDateString(),
+                    'check_out' => $rangeEnd->toDateString(),
+                    'type' => $rangeType,
+                    'reason' => $rangeType === 'blocked' ? 'All rooms blocked by administration' : null,
+                ];
+            }
+
+            return $result;
         });
 
-        return response()->json($reservations);
+        return response()->json($unavailableRanges);
     }
 
     /**
@@ -113,12 +182,15 @@ class RoomController extends Controller
         // Cache public room listings (no date filter, no admin view)
         if (!$hasDateFilter && !$isAdminOrStaff) {
             $rooms = Cache::remember('rooms_public_list', 300, function () {
-                return Room::with(['amenities', 'images'])->get();
+                return Room::with(['amenities', 'images'])
+                    ->orderByRaw('CAST(room_number AS UNSIGNED) ASC, room_number ASC')
+                    ->get();
             });
             return response()->json($rooms);
         }
 
-        $query = Room::with(['amenities', 'images']);
+        $query = Room::with(['amenities', 'images'])
+            ->orderByRaw('CAST(room_number AS UNSIGNED) ASC, room_number ASC');
 
         // Optional date-based availability filtering
         if ($hasDateFilter) {
@@ -183,22 +255,40 @@ class RoomController extends Controller
      */
     public function store(Request $request)
     {
+        if ($request->has('is_promo')) {
+            $isPromo = filter_var($request->input('is_promo'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($isPromo !== null) {
+                $request->merge(['is_promo' => $isPromo]);
+            }
+        }
+
         $validator = Validator::make($request->all(), [
             'room_number' => 'required|string|unique:rooms',
             'room_type' => 'required|string',
             'description' => 'nullable|string',
             'price_per_night' => 'required_unless:room_type,Family Room,Barkadahan Room|nullable|numeric',
             'price_per_head' => 'required_if:room_type,Family Room,Barkadahan Room|nullable|numeric',
-            'max_occupancy' => 'required|integer',
+            'extra_bed_price' => 'nullable|numeric|min:0',
+            'max_occupancy' => 'required|integer|min:1',
+            'max_extra_guests' => 'nullable|integer|min:0',
             'min_occupancy' => 'nullable|integer',
             'status' => 'required|in:available,unavailable,maintenance',
+            'is_promo' => 'nullable|boolean',
+            'promo_price' => 'nullable|numeric|min:0',
+            'promo_price_per_head' => 'nullable|numeric|min:0',
+            'promo_discount_percent' => 'nullable|integer|min:1|max:99',
+            'promo_title' => 'nullable|string|max:255',
+            'promo_description' => 'nullable|string|max:1000',
             'image' => 'nullable|string',
             'bed_type' => 'nullable|string',
             'room_size' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
-            return response()->json($validator->errors(), 422);
+            return response()->json([
+                'message' => $validator->errors()->first(),
+                'errors' => $validator->errors()
+            ], 422);
         }
 
         $data = $request->all();
@@ -249,8 +339,8 @@ class RoomController extends Controller
 
         if ($request->has('amenities')) {
             // Handle amenities which might be sent as a stringified JSON array if using FormData
-            $amenities = is_string($request->amenities) ? json_decode($request->amenities) : $request->amenities;
-            $room->amenities()->sync($amenities);
+            $amenities = is_string($request->amenities) ? json_decode($request->amenities, true) : $request->amenities;
+            $room->amenities()->sync(is_array($amenities) ? $amenities : []);
         }
 
         // Invalidate room-related caches after creation
@@ -295,22 +385,40 @@ class RoomController extends Controller
             return response()->json(['message' => 'Room not found'], 404);
         }
 
+        if ($request->has('is_promo')) {
+            $isPromo = filter_var($request->input('is_promo'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($isPromo !== null) {
+                $request->merge(['is_promo' => $isPromo]);
+            }
+        }
+
         $validator = Validator::make($request->all(), [
             'room_number' => 'sometimes|required|string|unique:rooms,room_number,' . $id,
             'room_type' => 'sometimes|required|string',
             'description' => 'nullable|string',
             'price_per_night' => 'sometimes|required_unless:room_type,Family Room,Barkadahan Room|nullable|numeric',
             'price_per_head' => 'sometimes|required_if:room_type,Family Room,Barkadahan Room|nullable|numeric',
-            'max_occupancy' => 'sometimes|required|integer',
+            'extra_bed_price' => 'nullable|numeric|min:0',
+            'max_occupancy' => 'sometimes|required|integer|min:1',
+            'max_extra_guests' => 'nullable|integer|min:0',
             'min_occupancy' => 'sometimes|required|integer',
             'status' => 'sometimes|required|in:available,unavailable,maintenance',
+            'is_promo' => 'nullable|boolean',
+            'promo_price' => 'nullable|numeric|min:0',
+            'promo_price_per_head' => 'nullable|numeric|min:0',
+            'promo_discount_percent' => 'nullable|integer|min:1|max:99',
+            'promo_title' => 'nullable|string|max:255',
+            'promo_description' => 'nullable|string|max:1000',
             'image' => 'nullable|string',
             'bed_type' => 'nullable|string',
             'room_size' => 'nullable|string',
         ]);
 
         if ($validator->fails()) {
-            return response()->json($validator->errors(), 422);
+            return response()->json([
+                'message' => $validator->errors()->first(),
+                'errors' => $validator->errors()
+            ], 422);
         }
 
         $data = $request->all();
@@ -378,8 +486,8 @@ class RoomController extends Controller
         }
 
         if ($request->has('amenities')) {
-            $amenities = is_string($request->amenities) ? json_decode($request->amenities) : $request->amenities;
-            $room->amenities()->sync($amenities);
+            $amenities = is_string($request->amenities) ? json_decode($request->amenities, true) : $request->amenities;
+            $room->amenities()->sync(is_array($amenities) ? $amenities : []);
         }
 
         // Invalidate room-related caches after update
@@ -406,6 +514,78 @@ class RoomController extends Controller
         $this->clearRoomCaches($roomId);
 
         return response()->json(['message' => 'Room deleted successfully']);
+    }
+
+    /**
+     * Update promotional status & pricing for a room.
+     */
+    public function updatePromo(Request $request, string $id)
+    {
+        $room = Room::find($id);
+        if (!$room) {
+            return response()->json(['message' => 'Room not found'], 404);
+        }
+
+        $validator = Validator::make($request->all(), [
+            'is_promo' => 'required|boolean',
+            'promo_price' => 'nullable|numeric|min:0',
+            'promo_price_per_head' => 'nullable|numeric|min:0',
+            'promo_discount_percent' => 'nullable|integer|min:1|max:99',
+            'promo_title' => 'nullable|string|max:255',
+            'promo_description' => 'nullable|string|max:1000',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => $validator->errors()->first(),
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        $isPromo = (bool) $request->input('is_promo', false);
+        $data = [
+            'is_promo' => $isPromo,
+            'promo_price' => $isPromo ? $request->input('promo_price') : null,
+            'promo_price_per_head' => $isPromo ? $request->input('promo_price_per_head') : null,
+            'promo_discount_percent' => $isPromo ? $request->input('promo_discount_percent') : null,
+            'promo_title' => $isPromo ? ($request->input('promo_title') ?: 'Special Offer') : null,
+            'promo_description' => $isPromo ? $request->input('promo_description') : null,
+        ];
+
+        $room->update($data);
+        $this->clearRoomCaches($room->id);
+
+        return response()->json([
+            'message' => $isPromo ? "Promotion activated for Room #{$room->room_number}." : "Promotion deactivated for Room #{$room->room_number}.",
+            'room' => $room->fresh(['amenities', 'images'])
+        ]);
+    }
+
+    /**
+     * Remove promotional pricing from a room.
+     */
+    public function removePromo(string $id)
+    {
+        $room = Room::find($id);
+        if (!$room) {
+            return response()->json(['message' => 'Room not found'], 404);
+        }
+
+        $room->update([
+            'is_promo' => false,
+            'promo_price' => null,
+            'promo_price_per_head' => null,
+            'promo_discount_percent' => null,
+            'promo_title' => null,
+            'promo_description' => null,
+        ]);
+
+        $this->clearRoomCaches($room->id);
+
+        return response()->json([
+            'message' => "Promotion removed from Room #{$room->room_number}.",
+            'room' => $room->fresh(['amenities', 'images'])
+        ]);
     }
 
     /**
