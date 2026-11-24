@@ -45,9 +45,23 @@ class Reservation extends Model
         'downpayment_amount',
         'status',
         'payment_status',
+        'payment_screenshot',
         'cancellation_reason',
         'xendit_invoice_id',
     ];
+
+    protected $appends = ['payment_screenshot_url'];
+
+    public function getPaymentScreenshotUrlAttribute(): ?string
+    {
+        if (!$this->payment_screenshot) {
+            return null;
+        }
+        if (str_starts_with($this->payment_screenshot, 'http') || str_starts_with($this->payment_screenshot, '/')) {
+            return $this->payment_screenshot;
+        }
+        return '/storage/' . ltrim($this->payment_screenshot, '/');
+    }
 
     protected $casts = [
         'children_ages' => 'array',

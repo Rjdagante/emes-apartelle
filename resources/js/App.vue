@@ -206,15 +206,15 @@
             <ul class="footer-contact list-unstyled">
               <li class="mb-3 d-flex gap-3">
                 <i class="bi bi-geo-alt text-gold mt-1"></i>
-                <span class="text-white-50 small">Poblacion, Purok 1, General Luna Surigao del Norte, Philippines</span>
+                <span class="text-white-50 small">{{ publicSettings.hotel_address }}</span>
               </li>
               <li class="mb-3 d-flex gap-3">
                 <i class="bi bi-telephone text-gold mt-1"></i>
-                <span class="text-white-50 small">+63 950 560 2175</span>
+                <span class="text-white-50 small">{{ publicSettings.phone }}</span>
               </li>
               <li class="mb-3 d-flex gap-3">
                 <i class="bi bi-envelope text-gold mt-1"></i>
-                <span class="text-white-50 small">info@emesapartelle.com</span>
+                <span class="text-white-50 small">{{ publicSettings.email }}</span>
               </li>
             </ul>
           </div>
@@ -261,7 +261,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuth } from './store/auth';
 import Swal from 'sweetalert2';
@@ -275,6 +275,26 @@ const isAuthRoute = computed(() => ['/login', '/register'].includes(route.path))
 const isScrolled = ref(false);
 const isNavbarScrolled = computed(() => {
   return isScrolled.value || (state.isAuthenticated && state.user?.is_suspended);
+});
+const publicSettings = ref({
+  hotel_address: 'General Luna, Surigao del Norte, Siargao Island, Philippines',
+  phone: '+63 912 345 6789',
+  email: 'info@emesapartelle.com',
+});
+
+const fetchPublicSettings = async () => {
+  try {
+    const response = await axios.get('/api/settings/public');
+    Object.assign(publicSettings.value, response.data);
+  } catch (err) {
+    console.error('Failed to load public settings', err);
+  }
+};
+
+watch(isAdminRoute, (inAdmin, wasInAdmin) => {
+  if (wasInAdmin && !inAdmin) {
+    fetchPublicSettings();
+  }
 });
 const notifications = ref([]);
 const unreadCount = ref(0);
@@ -445,6 +465,7 @@ const handleVisibilityChange = () => {
 };
 
 onMounted(() => {
+  fetchPublicSettings();
   window.addEventListener('scroll', handleScroll);
   if (state.isAuthenticated) {
     startPolling();

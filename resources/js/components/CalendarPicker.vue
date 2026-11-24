@@ -36,11 +36,11 @@
     <!-- Active reason notice (shown on hover or tap) -->
     <div 
       v-if="currentNotice" 
-      class="calendar-reason-banner mt-2 p-2 rounded-3 d-flex align-items-center gap-2 animate-fade-in"
+      class="calendar-reason-banner mt-2 p-2 rounded-3 d-flex align-items-center gap-2"
       :class="currentNotice.isBlocked ? 'bg-warning-subtle text-warning-emphasis border border-warning-subtle' : 'bg-danger-subtle text-danger border border-danger-subtle'"
     >
       <i :class="currentNotice.isBlocked ? 'bi bi-slash-circle-fill text-warning' : 'bi bi-calendar-x-fill text-danger'" class="flex-shrink-0"></i>
-      <div class="x-small text-truncate" style="line-height: 1.25;">
+      <div class="x-small flex-grow-1 text-truncate" style="min-width: 0; line-height: 1.25;">
         <span class="fw-bold">{{ currentNotice.title }}:</span> {{ currentNotice.text }}
       </div>
     </div>
@@ -152,8 +152,14 @@ const parseLocalDate = (dateVal) => {
   return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
 };
 
+const isBeforeMinDate = (dateObj) => {
+  if (!dateObj || !props.minDate) return false;
+  const dStr = formatToYMD(dateObj.fullDate);
+  return props.isCheckout ? dStr <= props.minDate : dStr < props.minDate;
+};
+
 const getDisabledRange = (dateObj) => {
-  if (!dateObj || !props.disabledDates || !props.disabledDates.length) return null;
+  if (!dateObj || isBeforeMinDate(dateObj) || !props.disabledDates || !props.disabledDates.length) return null;
   const d = parseLocalDate(dateObj.fullDate);
   if (!d) return null;
 
@@ -199,8 +205,8 @@ const isDisabled = (dateObj) => {
   if (!dateObj) return true;
   const dStr = formatToYMD(dateObj.fullDate);
   
-  // Check min date
-  if (props.minDate && dStr < props.minDate) return true;
+  // Check min date (for check-out calendars, the check-in date itself cannot be selected)
+  if (isBeforeMinDate(dateObj)) return true;
   
   // Check max date
   if (props.maxDate && dStr > props.maxDate) return true;
@@ -212,7 +218,11 @@ const isDisabled = (dateObj) => {
 const getDateTitle = (dateObj) => {
   if (!dateObj) return '';
   const dStr = formatToYMD(dateObj.fullDate);
-  if (props.minDate && dStr < props.minDate) return 'Past date';
+  if (isBeforeMinDate(dateObj)) {
+    return props.isCheckout && dStr === props.minDate
+      ? 'Check-out must be after check-in'
+      : 'Past date';
+  }
   if (props.maxDate && dStr > props.maxDate) return 'Date unavailable';
 
   const range = getDisabledRange(dateObj);
@@ -285,12 +295,15 @@ watch(() => props.modelValue, (newVal) => {
 
 <style scoped>
 .calendar-picker {
-  min-width: 280px;
+  width: 292px;
+  min-width: 292px;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .calendar-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
 }
 
@@ -302,11 +315,12 @@ watch(() => props.modelValue, (newVal) => {
   padding: 4px 0;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  min-width: 0;
 }
 
 .calendar-date {
   text-align: center;
-  padding: 6px 0;
+  padding: 0;
   font-size: 0.8rem;
   font-weight: 600;
   cursor: pointer;
@@ -315,6 +329,8 @@ watch(() => props.modelValue, (newVal) => {
   user-select: none;
   color: #1E293B; /* Slate 800 */
   aspect-ratio: 1 / 1;
+  width: 100%;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -367,7 +383,7 @@ watch(() => props.modelValue, (newVal) => {
   transition: all 0.2s ease-in-out;
 }
 
-.calendar-date.today:not(.selected):not(.blocked):not(.booked) {
+.calendar-date.today:not(.selected):not(.blocked):not(.booked):not(.disabled) {
   border: 2px solid var(--primary-gold-subtle);
   color: var(--primary-gold);
 }

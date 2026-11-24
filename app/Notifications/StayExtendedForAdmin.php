@@ -38,16 +38,21 @@ class StayExtendedForAdmin extends Notification
      */
     public function toArray(object $notifiable): array
     {
-        $guestName = $this->reservation->user->name ?? 'Guest';
+        $guestName = $this->reservation->guest_name ?: ($this->reservation->user->name ?? 'Guest');
         $roomNumber = $this->reservation->room->room_number ?? '';
+        $hasProof = !empty($this->reservation->payment_screenshot);
+
         return [
             'type' => 'stay_extended',
-            'icon' => 'bi-calendar-plus-fill',
-            'title' => 'Stay Extended!',
-            'message' => "Guest {$guestName} extended stay in Room #{$roomNumber} until " . date('M d, Y', strtotime($this->reservation->check_out)) . ".",
+            'icon' => $hasProof ? 'bi-receipt-cutoff' : 'bi-calendar-plus-fill',
+            'title' => $hasProof ? 'Stay Extended & Payment Proof!' : 'Stay Extended!',
+            'message' => $hasProof
+                ? "Guest {$guestName} extended stay in Room #{$roomNumber} until " . date('M d, Y', strtotime($this->reservation->check_out)) . " and uploaded a payment screenshot for verification."
+                : "Guest {$guestName} extended stay in Room #{$roomNumber} until " . date('M d, Y', strtotime($this->reservation->check_out)) . ".",
             'action_url' => '/admin/reservations',
-            'action_text' => 'View Reservations',
-            'reservation_id' => $this->reservation->id
+            'action_text' => $hasProof ? 'Verify Payment' : 'View Reservations',
+            'reservation_id' => $this->reservation->id,
+            'payment_screenshot_url' => $this->reservation->payment_screenshot_url,
         ];
     }
 }

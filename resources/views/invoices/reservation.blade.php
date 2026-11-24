@@ -184,10 +184,38 @@
                 </td>
             </tr>
             @endif
+            @php
+                $isHalfPayment = ($reservation->payment_option ?? 'full') === 'half';
+                $isFullyPaid = $reservation->payment_status === 'paid';
+                $hasProof = !empty($reservation->payment_screenshot);
+                $totalAmount = (float) $reservation->total_amount;
+                $paidAmount = $isFullyPaid
+                    ? $totalAmount
+                    : ($isHalfPayment ? (float) ($reservation->downpayment_amount ?: ($totalAmount / 2)) : ($hasProof ? $totalAmount : 0));
+                $remainingBalance = $isFullyPaid ? 0 : max(0, $totalAmount - $paidAmount);
+            @endphp
             <tr class="total">
                 <td></td>
-                <td>Total: &#8369;{{ number_format($reservation->total_amount, 2) }}</td>
+                <td>Total: &#8369;{{ number_format($totalAmount, 2) }}</td>
             </tr>
+            @if($isHalfPayment && !$isFullyPaid)
+            <tr class="item">
+                <td>Amount Paid (50% Downpayment)</td>
+                <td style="color: #155724; font-weight: bold;">&#8369;{{ number_format($paidAmount, 2) }}</td>
+            </tr>
+            <tr class="total">
+                <td>Remaining Balance</td>
+                <td>
+                    &#8369;{{ number_format($remainingBalance, 2) }}<br>
+                    <span style="color: #666; font-size: 12px; font-weight: normal;">Pay the other half when you walk in.</span>
+                </td>
+            </tr>
+            @elseif($isFullyPaid || $hasProof)
+            <tr class="item">
+                <td>Amount Paid</td>
+                <td style="color: #155724; font-weight: bold;">&#8369;{{ number_format($paidAmount, 2) }}</td>
+            </tr>
+            @endif
         </table>
         <div style="margin-top: 50px; text-align: center; color: #999; font-size: 12px;">
             Thank you for your business!

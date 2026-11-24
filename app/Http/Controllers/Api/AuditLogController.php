@@ -29,7 +29,8 @@ class AuditLogController extends Controller
                   ->orWhere('room_type', 'LIKE', "%{$search}%")
                   ->orWhere('description', 'LIKE', "%{$search}%")
                   ->orWhere('action', 'LIKE', "%{$search}%")
-                  ->orWhere('entity_id', 'LIKE', "%{$search}%");
+                  ->orWhere('entity_id', 'LIKE', "%{$search}%")
+                  ->orWhere('ip_address', 'LIKE', "%{$search}%");
             });
         }
 
@@ -231,6 +232,14 @@ class AuditLogController extends Controller
             ]);
 
             foreach ($logs as $log) {
+                $isAuthLog = $log->entity_type === 'user' || $log->action === 'user_login';
+                $reference = '';
+                if ($log->entity_id) {
+                    $reference = $isAuthLog
+                        ? ('#USR-' . str_pad($log->entity_id, 3, '0', STR_PAD_LEFT))
+                        : ('#RES-' . str_pad($log->entity_id, 3, '0', STR_PAD_LEFT));
+                }
+
                 fputcsv($handle, [
                     $log->id,
                     $log->created_at ? $log->created_at->format('Y-m-d h:i:s A') : '',
@@ -238,12 +247,12 @@ class AuditLogController extends Controller
                     $log->actor_name ?? 'System',
                     ucfirst($log->actor_role ?? 'guest'),
                     $log->actor_email ?? '',
-                    $log->entity_id ? ('#RES-' . str_pad($log->entity_id, 3, '0', STR_PAD_LEFT)) : '',
-                    $log->guest_name ?? '',
-                    trim(($log->room_type ?? '') . ($log->room_number ? " #{$log->room_number}" : '')),
-                    $log->guests_count,
-                    $log->adults_count,
-                    $log->children_count,
+                    $reference,
+                    $isAuthLog ? '' : ($log->guest_name ?? ''),
+                    $isAuthLog ? '' : trim(($log->room_type ?? '') . ($log->room_number ? " #{$log->room_number}" : '')),
+                    $isAuthLog ? '' : $log->guests_count,
+                    $isAuthLog ? '' : $log->adults_count,
+                    $isAuthLog ? '' : $log->children_count,
                     $log->check_in ? $log->check_in->format('Y-m-d h:i A') : '',
                     $log->check_out ? $log->check_out->format('Y-m-d h:i A') : '',
                     $log->total_amount !== null ? number_format((float) $log->total_amount, 2, '.', '') : '',

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -55,6 +56,12 @@ class SocialController extends Controller
             }
 
             $token = $user->createToken('auth_token')->plainTextToken;
+
+            try {
+                AuditLog::recordAuthActivity($user, 'user_login', 'Google OAuth', request());
+            } catch (\Throwable $e) {
+                Log::error('AuditLog (Google login) failed: ' . $e->getMessage());
+            }
 
             // Redirect to frontend with token
             $frontendUrl = config('app.url');

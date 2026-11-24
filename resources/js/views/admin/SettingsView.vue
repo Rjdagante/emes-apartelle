@@ -17,6 +17,59 @@
               <label class="form-label small fw-bold text-muted text-uppercase">Contact Phone</label>
               <input type="text" class="form-control bg-light border-0 px-3 py-2" v-model="settings.phone">
             </div>
+            <div class="mb-3">
+              <label class="form-label small fw-bold text-muted text-uppercase">GCash Number</label>
+              <input type="text" class="form-control bg-light border-0 px-3 py-2" v-model="settings.gcash_number" placeholder="e.g. 0917 123 4567">
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-bold text-muted text-uppercase">GCash Account Name</label>
+              <input type="text" class="form-control bg-light border-0 px-3 py-2" v-model="settings.gcash_account_name" placeholder="e.g. EME's Apartelle">
+            </div>
+            <div class="mb-3">
+              <label class="form-label small fw-bold text-muted text-uppercase d-flex justify-content-between align-items-center">
+                <span>GCash QR Code</span>
+                <button
+                  v-if="settings.gcash_qr_url"
+                  type="button"
+                  class="btn btn-link btn-sm text-danger p-0 text-decoration-none small fw-semibold"
+                  @click="removeQrImage"
+                  :disabled="uploadingQr"
+                >
+                  Remove
+                </button>
+              </label>
+              <div class="qr-upload-card rounded-3 p-3 bg-light text-center border">
+                <div v-if="settings.gcash_qr_url" class="mb-2">
+                  <img
+                    :src="settings.gcash_qr_url"
+                    alt="GCash QR Code"
+                    class="img-fluid rounded-3 border bg-white p-1"
+                    style="max-height: 180px; object-fit: contain;"
+                  >
+                </div>
+                <div v-else class="py-3 text-muted small">
+                  <i class="bi bi-qr-code fs-2 d-block mb-1 opacity-50"></i>
+                  No QR code uploaded yet
+                </div>
+                <input
+                  ref="qrFileInput"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  class="d-none"
+                  @change="handleQrFileChange"
+                >
+                <button
+                  type="button"
+                  class="btn btn-outline-secondary btn-sm rounded-pill px-3 fw-semibold mt-1"
+                  @click="qrFileInput?.click()"
+                  :disabled="uploadingQr"
+                >
+                  <span v-if="uploadingQr" class="spinner-border spinner-border-sm me-1"></span>
+                  <i v-else class="bi bi-upload me-1"></i>
+                  {{ uploadingQr ? 'Uploading...' : (settings.gcash_qr_url ? 'Change QR Picture' : 'Upload QR Picture') }}
+                </button>
+              </div>
+            </div>
             <button class="btn btn-gold w-100 py-2 mt-2 fw-bold text-uppercase shadow-sm" :disabled="saving">
               <span v-if="saving" class="spinner-border spinner-border-sm me-2"></span>
               {{ saving ? 'Saving...' : 'Save Changes' }}
@@ -216,12 +269,17 @@ import Swal from 'sweetalert2';
 import { notify } from '../../utils/sweetalert';
 
 const saving = ref(false);
+const uploadingQr = ref(false);
+const qrFileInput = ref(null);
 const lastUpdated = ref('---');
 
 const settings = reactive({
   store_name: "",
   email: "",
   phone: "",
+  gcash_number: "",
+  gcash_account_name: "",
+  gcash_qr_url: null,
   hotel_address: "",
   hotel_latitude: "",
   hotel_longitude: "",
@@ -270,6 +328,54 @@ const saveSettings = async () => {
     notify.error('Update Failed', 'Failed to save settings.');
   } finally {
     saving.value = false;
+  }
+};
+
+const handleQrFileChange = async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  if (!file.type.startsWith('image/')) {
+    notify.error('Invalid File', 'Please select a valid image file (JPG, PNG, or WEBP).');
+    event.target.value = '';
+    return;
+  }
+
+  if (file.size > 4 * 1024 * 1024) {
+    notify.error('File Too Large', 'QR code image must be 4 MB or smaller.');
+    event.target.value = '';
+    return;
+  }
+
+  uploadingQr.value = true;
+  try {
+    const formData = new FormData();
+    formData.append('qr_image', file);
+    const response = await axios.post('/api/admin/settings/qr', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    settings.gcash_qr_url = response.data.gcash_qr_url;
+    lastUpdated.value = new Date().toLocaleString();
+    notify.success('QR Code Updated', 'The GCash QR picture has been saved.');
+  } catch (err) {
+    notify.error('Upload Failed', err.response?.data?.message || 'Failed to upload QR code image.');
+  } finally {
+    uploadingQr.value = false;
+    event.target.value = '';
+  }
+};
+
+const removeQrImage = async () => {
+  uploadingQr.value = true;
+  try {
+    await axios.delete('/api/admin/settings/qr');
+    settings.gcash_qr_url = null;
+    lastUpdated.value = new Date().toLocaleString();
+    notify.success('QR Code Removed', 'The GCash QR picture has been removed.');
+  } catch (err) {
+    notify.error('Remove Failed', 'Failed to remove QR code image.');
+  } finally {
+    uploadingQr.value = false;
   }
 };
 

@@ -786,7 +786,7 @@ const sendPromoBroadcast = async () => {
       guest_id: targetGuest.value ? targetGuest.value.id : null,
     };
 
-    const res = await axios.post('/api/admin/broadcast-promo', payload);
+    const res = await axios.post('/api/admin/broadcast-promo', payload, { timeout: 0 });
 
     showPromoModal.value = false;
 
@@ -846,7 +846,7 @@ const sendPackageBroadcast = async () => {
       package_ids: selectedPackageIds.value,
     };
 
-    const res = await axios.post('/api/admin/broadcast-package', payload);
+    const res = await axios.post('/api/admin/broadcast-package', payload, { timeout: 0 });
 
     showPackageModal.value = false;
 

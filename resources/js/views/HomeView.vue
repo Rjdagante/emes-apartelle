@@ -1412,13 +1412,17 @@ const formatIconClass = (icon) => {
                                     :class="
                                         room.status === 'available'
                                             ? 'badge-available'
-                                            : 'badge-unavailable'
+                                            : room.status === 'maintenance'
+                                              ? 'badge-maintenance'
+                                              : 'badge-unavailable'
                                     "
                                 >
                                     {{
                                         room.status === "available"
                                             ? "Available"
-                                            : "Occupied"
+                                            : room.status === "maintenance"
+                                              ? "Under Maintenance"
+                                              : "Occupied"
                                     }}
                                 </span>
                                 <span
@@ -2744,6 +2748,11 @@ const formatIconClass = (icon) => {
 
 .badge-unavailable {
     background: #ef4444 !important;
+    color: #ffffff !important;
+}
+
+.badge-maintenance {
+    background: #f59e0b !important;
     color: #ffffff !important;
 }
 

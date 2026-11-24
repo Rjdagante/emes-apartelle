@@ -26,14 +26,26 @@ export async function generateDeviceFingerprint() {
 
     const raw = components.join('|||');
 
-    // Use the native Web Crypto API for SHA-256 hashing (no external dependencies)
-    const encoder = new TextEncoder();
-    const data = encoder.encode(raw);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    // Use the native Web Crypto API for SHA-256 hashing when available (secure contexts)
+    if (typeof crypto !== 'undefined' && crypto.subtle) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(raw);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
 
-    // Convert ArrayBuffer to hex string
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        // Convert ArrayBuffer to hex string
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
 
-    return hashHex;
+    // Fallback hash for non-HTTPS local network origins where crypto.subtle is unavailable
+    let h1 = 0xdeadbeef;
+    let h2 = 0x41c6ce57;
+    for (let i = 0; i < raw.length; i++) {
+        const ch = raw.charCodeAt(i);
+        h1 = Math.imul(h1 ^ ch, 2654435761);
+        h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return (h2 >>> 0).toString(16).padStart(8, '0') + (h1 >>> 0).toString(16).padStart(8, '0');
 }

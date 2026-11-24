@@ -76,6 +76,8 @@ class ReservationController extends Controller
             ], 403);
         }
         
+        $isStaffOrAdmin = $user && in_array($user->role, ['admin', 'staff']);
+
         $validator = Validator::make($request->all(), [
             'room_id' => 'required|exists:rooms,id',
             'package_id' => 'nullable|exists:room_packages,id',
@@ -88,6 +90,10 @@ class ReservationController extends Controller
             'children_ages' => 'nullable',
             'extra_beds' => 'nullable|integer|min:0',
             'guest_name' => 'nullable|string|max:255',
+            'payment_screenshot' => ($isStaffOrAdmin ? 'nullable' : 'required') . '|image|mimes:jpeg,png,jpg,webp|max:5120',
+        ], [
+            'payment_screenshot.required' => 'Please upload a screenshot of your payment to proceed with your booking.',
+            'payment_screenshot.image' => 'The payment proof must be a valid image file (JPG, PNG, or WEBP).',
         ]);
 
         if (!$userId && !$request->has('user_id')) {
@@ -222,6 +228,11 @@ class ReservationController extends Controller
             $guestName = $request->user()->name ?: trim(($request->user()->first_name ?? '') . ' ' . ($request->user()->last_name ?? ''));
         }
 
+        $paymentScreenshotPath = null;
+        if ($request->hasFile('payment_screenshot')) {
+            $paymentScreenshotPath = $request->file('payment_screenshot')->store('payment_screenshots', 'public');
+        }
+
         $reservation = Reservation::create([
             'user_id' => $userId,
             'guest_name' => $guestName,
@@ -240,6 +251,7 @@ class ReservationController extends Controller
             'downpayment_amount' => $downpaymentAmount,
             'status' => 'pending',
             'payment_status' => 'unpaid',
+            'payment_screenshot' => $paymentScreenshotPath,
         ]);
 
         // Send Notification immediately
@@ -363,6 +375,8 @@ class ReservationController extends Controller
             ], 422);
         }
 
+        $isGuest = $user && !in_array($user->role, ['admin', 'staff']);
+
         $validator = Validator::make($request->all(), [
             'status' => 'sometimes|required|in:pending,confirmed,checked-in,cancelled,completed,cancellation_pending',
             'payment_status' => 'sometimes|required|in:unpaid,partially_paid,paid,refunded',
@@ -371,6 +385,10 @@ class ReservationController extends Controller
             'guest_name' => 'sometimes|nullable|string|max:255',
             'cancellation_reason' => 'sometimes|nullable|string|max:1000',
             'guests' => 'sometimes|required|integer|min:1',
+            'payment_screenshot' => ($isGuest && $request->has('check_out') ? 'required' : 'nullable') . '|image|mimes:jpeg,png,jpg,webp|max:5120',
+        ], [
+            'payment_screenshot.required' => 'Please upload a screenshot of your payment to confirm stay extension.',
+            'payment_screenshot.image' => 'The payment proof must be a valid image file (JPG, PNG, or WEBP).',
         ]);
 
         $validator->sometimes('cancellation_reason', 'required|string|min:5|max:1000', function ($input) use ($reservation) {
@@ -443,9 +461,10 @@ class ReservationController extends Controller
                 ], 422);
             }
 
-            $extraGuests = max(0, $chargeableGuests - (int) $room->max_occupancy);
-            $extraBedRate = (float) ($room->extra_bed_price ?? 300.00);
-            $extraBedCharge = $extraGuests * $extraBedRate * $days;
+            // Preserve the reservation's existing extra bedding count and charge on reschedules/extensions
+            // so optional extra beds are not dropped or multiplied across additional nights
+            $extraGuests = (int) ($reservation->extra_guests ?? 0);
+            $extraBedCharge = (float) ($reservation->extra_bed_charge ?? 0.00);
 
             $isPerHead = in_array($room->room_type, ['Family Room', 'Barkadahan Room']);
             if ($isPerHead) {
@@ -460,10 +479,14 @@ class ReservationController extends Controller
         }
 
         $oldCheckout = $reservation->check_out;
-        $isGuest = $user && !in_array($user->role, ['admin', 'staff']);
         $additionalAmount = 0;
         if ($newTotalAmount !== null && $newTotalAmount > $reservation->total_amount) {
             $additionalAmount = $newTotalAmount - $reservation->total_amount;
+        }
+
+        $paymentScreenshotPath = null;
+        if ($request->hasFile('payment_screenshot')) {
+            $paymentScreenshotPath = $request->file('payment_screenshot')->store('payment_screenshots', 'public');
         }
 
         return DB::transaction(function () use (
@@ -478,12 +501,16 @@ class ReservationController extends Controller
             $totalGuests,
             $adults,
             $children,
-            $childrenAges
+            $childrenAges,
+            $paymentScreenshotPath
         ) {
             $oldStatus = $reservation->status;
             $oldPaymentStatus = $reservation->payment_status;
             
-            $updateData = $request->all();
+            $updateData = $request->except(['payment_screenshot', '_method']);
+            if ($paymentScreenshotPath) {
+                $updateData['payment_screenshot'] = $paymentScreenshotPath;
+            }
             if ($request->filled('check_in')) {
                 $cIn = Carbon::parse($request->check_in);
                 if (strlen(trim($request->check_in)) <= 10 || $cIn->format('H:i:s') === '00:00:00') {
@@ -549,6 +576,8 @@ class ReservationController extends Controller
                 }
             }
 
+            $defaultPaymentMethod = $reservation->payment_screenshot ? 'QR Payment' : 'Cash/Manual';
+
             // Transition from unpaid to partially_paid (automatically record downpayment in payments)
             if ($reservation->payment_status === 'partially_paid' && $oldPaymentStatus === 'unpaid') {
                 $paymentExists = Payment::where('reservation_id', $reservation->id)->exists();
@@ -558,7 +587,7 @@ class ReservationController extends Controller
                         'reservation_id' => $reservation->id,
                         'paymongo_payment_id' => 'MANUAL-DP-' . strtoupper(Str::random(10)),
                         'amount' => $downpayment,
-                        'method' => 'Cash/Manual',
+                        'method' => $defaultPaymentMethod,
                         'status' => 'Succeeded',
                     ]);
                 }
@@ -577,7 +606,7 @@ class ReservationController extends Controller
                         'reservation_id' => $reservation->id,
                         'paymongo_payment_id' => 'MANUAL-BAL-' . strtoupper(Str::random(10)),
                         'amount' => $remainingBalance,
-                        'method' => 'Cash/Manual',
+                        'method' => $defaultPaymentMethod,
                         'status' => 'Succeeded',
                     ]);
                 }
@@ -600,7 +629,7 @@ class ReservationController extends Controller
                         'reservation_id' => $reservation->id,
                         'paymongo_payment_id' => 'MANUAL-' . strtoupper(Str::random(10)), // Reusing column for manual payments
                         'amount' => $remainingBalance,
-                        'method' => 'Cash/Manual',
+                        'method' => $defaultPaymentMethod,
                         'status' => 'Succeeded',
                     ]);
                 }
@@ -615,7 +644,7 @@ class ReservationController extends Controller
                         'reservation_id' => $reservation->id,
                         'paymongo_payment_id' => 'MANUAL-' . strtoupper(Str::random(10)),
                         'amount' => $reservation->total_amount,
-                        'method' => 'Cash/Manual',
+                        'method' => $defaultPaymentMethod,
                         'status' => 'Succeeded',
                     ]);
                     // Also ensure payment_status is set to paid
@@ -901,9 +930,10 @@ class ReservationController extends Controller
         $chargeableGuests = max(1, $adults + $payingChildren);
         $totalGuests = max(1, $adults + $children);
 
-        $extraGuests = max(0, $chargeableGuests - (int) $room->max_occupancy);
-        $extraBedRate = (float) ($room->extra_bed_price ?? 300.00);
-        $extraBedCharge = $extraGuests * $extraBedRate * $days;
+        // Preserve the reservation's existing extra bedding count and charge on reschedule
+        // so optional extra beds are not dropped or multiplied across additional nights
+        $extraGuests = (int) ($reservation->extra_guests ?? 0);
+        $extraBedCharge = (float) ($reservation->extra_bed_charge ?? 0.00);
 
         $isPerHead = in_array($room->room_type, ['Family Room', 'Barkadahan Room']);
         if ($isPerHead) {

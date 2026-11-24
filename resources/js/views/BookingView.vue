@@ -6,6 +6,7 @@ import Swal from 'sweetalert2';
 import { useAuth } from '../store/auth';
 import CalendarPicker from '../components/CalendarPicker.vue';
 import GuestSelector from '../components/GuestSelector.vue';
+import QrPaymentModal from '../components/QrPaymentModal.vue';
 
 const router = useRouter();
 
@@ -63,6 +64,17 @@ const totalGuests = computed(() => {
 const rooms = ref([]);
 const loading = ref(true);
 const bookedDates = ref([]);
+const showQrPaymentModal = ref(false);
+const publicSettings = ref({ gcash_number: '', gcash_account_name: '', gcash_qr_url: null });
+
+const fetchPublicSettings = async () => {
+    try {
+        const res = await axios.get('/api/settings/public');
+        publicSettings.value = res.data || {};
+    } catch (err) {
+        console.error('Error fetching public settings', err);
+    }
+};
 
 const fetchBookedDates = async () => {
     try {
@@ -197,6 +209,7 @@ onMounted(() => {
     fetchRooms();
     fetchBookedDates();
     fetchPackage();
+    fetchPublicSettings();
 });
 
 // Watch for date changes to update available rooms
@@ -417,6 +430,10 @@ const totalPrice = computed(() => {
     return basePriceTotal.value + extraBeddingTotal.value;
 });
 
+const amountDue = computed(() => {
+    return booking.value.paymentOption === 'half' ? totalPrice.value / 2 : totalPrice.value;
+});
+
 const maxSelectableGuests = computed(() => {
     if (!selectedRoom.value) return 4;
     return Number(selectedRoom.value.max_occupancy || 4);
@@ -515,25 +532,34 @@ const handleBooking = async () => {
         return;
     }
     
+    showQrPaymentModal.value = true;
+};
+
+const submitBookingWithProof = async (screenshotFile) => {
     loading.value = true;
     try {
-        const payload = {
-            user_id: state.user.id,
-            room_id: booking.value.roomId,
-            package_id: selectedPackage.value ? selectedPackage.value.id : null,
-            check_in: booking.value.checkIn.includes('T') ? booking.value.checkIn : `${booking.value.checkIn}T13:00:00`,
-            check_out: booking.value.checkOut.includes('T') ? booking.value.checkOut : `${booking.value.checkOut}T11:00:00`,
-            guests: totalGuests.value,
-            adults: booking.value.adults,
-            children: booking.value.children,
-            children_ages: booking.value.childrenAges,
-            extra_beds: selectedPackage.value ? 0 : Number(booking.value.extraBeds || 0),
-            guest_name: `${booking.value.firstName} ${booking.value.lastName}`.trim(),
-            payment_option: booking.value.paymentOption
-        };
+        const formData = new FormData();
+        formData.append('user_id', state.user.id);
+        formData.append('room_id', booking.value.roomId);
+        if (selectedPackage.value) {
+            formData.append('package_id', selectedPackage.value.id);
+        }
+        formData.append('check_in', booking.value.checkIn.includes('T') ? booking.value.checkIn : `${booking.value.checkIn}T13:00:00`);
+        formData.append('check_out', booking.value.checkOut.includes('T') ? booking.value.checkOut : `${booking.value.checkOut}T11:00:00`);
+        formData.append('guests', totalGuests.value);
+        formData.append('adults', booking.value.adults);
+        formData.append('children', booking.value.children);
+        formData.append('children_ages', JSON.stringify(booking.value.childrenAges || []));
+        formData.append('extra_beds', selectedPackage.value ? 0 : Number(booking.value.extraBeds || 0));
+        formData.append('guest_name', `${booking.value.firstName} ${booking.value.lastName}`.trim());
+        formData.append('payment_option', booking.value.paymentOption);
+        formData.append('payment_screenshot', screenshotFile);
 
-        const response = await axios.post('/api/reservations', payload);
-        
+        const response = await axios.post('/api/reservations', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+
+        showQrPaymentModal.value = false;
         const reservationId = response.data?.reservation?.id;
         if (reservationId) {
             router.push({ path: '/booking/success', query: { res_id: reservationId } });
@@ -542,10 +568,11 @@ const handleBooking = async () => {
         }
     } catch (err) {
         console.error("Booking failed", err);
+        const firstError = err.response?.data?.payment_screenshot?.[0];
         Swal.fire({
             icon: 'error',
             title: 'Booking Failed',
-            text: err.response?.data?.message || 'An error occurred while creating your reservation.'
+            text: firstError || err.response?.data?.message || 'An error occurred while creating your reservation.'
         });
     } finally {
         loading.value = false;
@@ -1028,14 +1055,44 @@ const formatToYMD = (date) => {
                                 </div>
                             </div>
 
+                            <!-- Payment Option -->
+                            <div class="mb-4">
+                                <label class="form-label x-small text-uppercase fw-bold text-muted mb-2 tracking-wider d-block">Payment Option</label>
+                                <div class="d-flex gap-2">
+                                    <button
+                                        type="button"
+                                        class="btn flex-grow-1 py-2 px-3 fw-bold small text-uppercase"
+                                        :class="booking.paymentOption === 'full' ? 'btn-gold text-white shadow-sm' : 'btn-outline-gold'"
+                                        @click="booking.paymentOption = 'full'"
+                                        style="font-size: 0.75rem; border-radius: 12px; height: 42px;"
+                                    >
+                                        Full Payment
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="btn flex-grow-1 py-2 px-3 fw-bold small text-uppercase"
+                                        :class="booking.paymentOption === 'half' ? 'btn-gold text-white shadow-sm' : 'btn-outline-gold'"
+                                        @click="booking.paymentOption = 'half'"
+                                        style="font-size: 0.75rem; border-radius: 12px; height: 42px;"
+                                    >
+                                        50% Downpayment
+                                    </button>
+                                </div>
+                            </div>
+
                             <!-- Total Amount Highlight -->
                             <div class="p-4 rounded-4 border mb-4" style="background-color: #fdfbf7; border-color: rgba(188, 145, 81, 0.3) !important;">
                                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                                     <div>
-                                        <span class="d-block x-small text-uppercase fw-bold text-muted">Total Amount to Settle</span>
-                                        <small class="text-muted">Taxes and service fees included</small>
+                                        <span class="d-block x-small text-uppercase fw-bold text-muted">
+                                            {{ booking.paymentOption === 'half' ? '50% Downpayment Due Now' : 'Total Amount to Settle' }}
+                                        </span>
+                                        <small class="text-muted" v-if="booking.paymentOption === 'half'">
+                                            Total: ₱{{ formatPrice(totalPrice) }} &middot; Pay remaining ₱{{ formatPrice(totalPrice / 2) }} when you walk in
+                                        </small>
+                                        <small class="text-muted" v-else>Taxes and service fees included</small>
                                     </div>
-                                    <div class="h2 mb-0 serif-font fw-bold text-gold">₱{{ formatPrice(totalPrice) }}</div>
+                                    <div class="h2 mb-0 serif-font fw-bold text-gold">₱{{ formatPrice(amountDue) }}</div>
                                 </div>
                             </div>
 
@@ -1045,10 +1102,16 @@ const formatToYMD = (date) => {
                                     <i class="bi bi-receipt fs-4"></i>
                                 </div>
                                 <div>
-                                    <h6 class="fw-bold text-secondary-dark mb-1">No Online Payment Required</h6>
+                                    <h6 class="fw-bold text-secondary-dark mb-1">
+                                        {{ booking.paymentOption === 'half' ? '50% Downpayment via GCash QR' : 'Full Payment via GCash QR' }}
+                                    </h6>
                                     <p class="small text-muted mb-0" style="line-height: 1.6;">
-                                        Once you confirm, your official booking receipt with the full amount breakdown will be shown immediately.
-                                        Please present your receipt and settle the total amount at the front desk upon check-in.
+                                        <template v-if="booking.paymentOption === 'half'">
+                                            Pay the 50% downpayment (₱{{ formatPrice(amountDue) }}) via GCash QR to submit your booking, then pay the remaining ₱{{ formatPrice(totalPrice / 2) }} when you walk in.
+                                        </template>
+                                        <template v-else>
+                                            Once you confirm, scan the GCash QR code and upload your payment screenshot to submit your booking and generate your official receipt.
+                                        </template>
                                     </p>
                                 </div>
                             </div>
@@ -1059,7 +1122,7 @@ const formatToYMD = (date) => {
                                 </button>
                                 <button @click="handleBooking" :disabled="loading || isSuspended" class="btn btn-gold flex-grow-2 w-100 py-3 text-uppercase fw-bold letter-spacing-wide shadow-none continue-btn">
                                     <template v-if="isSuspended">Account Suspended</template>
-                                    <template v-else>{{ loading ? 'Confirming...' : `Confirm Booking - ₱${formatPrice(totalPrice)}` }}</template>
+                                    <template v-else>{{ loading ? 'Confirming...' : `Confirm Booking - ₱${formatPrice(amountDue)}` }}</template>
                                 </button>
                             </div>
                         </div>
@@ -1168,7 +1231,19 @@ const formatToYMD = (date) => {
                                          <span class="h6 mb-0 text-dark fw-bold">Total Amount</span>
                                          <span class="h5 mb-0 serif-font text-gold fw-bold">₱{{ formatPrice(totalPrice) }}</span>
                                      </div>
-                                     <p class="small text-muted text-center mt-3 mb-0">Taxes and fees included &middot; Pay at the apartelle</p>
+                                     <template v-if="booking.paymentOption === 'half'">
+                                         <div class="d-flex justify-content-between align-items-center mb-1">
+                                             <span class="small fw-semibold text-success">50% Downpayment Due</span>
+                                             <span class="small fw-bold text-success">₱{{ formatPrice(amountDue) }}</span>
+                                         </div>
+                                         <div class="d-flex justify-content-between align-items-center mb-2">
+                                             <span class="small text-muted">Remaining Balance (Walk-in)</span>
+                                             <span class="small fw-bold text-dark">₱{{ formatPrice(totalPrice / 2) }}</span>
+                                         </div>
+                                     </template>
+                                     <p class="small text-muted text-center mt-3 mb-0">
+                                         {{ booking.paymentOption === 'half' ? 'Pay 50% now · Pay the other half when you walk in' : 'Taxes and fees included' }}
+                                     </p>
                                  </div>
                             </div>
                         </div>
@@ -1188,6 +1263,20 @@ const formatToYMD = (date) => {
                 </div>
             </div>
         </div>
+
+        <QrPaymentModal
+            :show="showQrPaymentModal"
+            :amount="amountDue"
+            :room-label="selectedRoom ? `Room #${selectedRoom.room_number} (${selectedRoom.room_type})` : ''"
+            :check-in="booking.checkIn"
+            :check-out="booking.checkOut"
+            :qr-url="publicSettings.gcash_qr_url"
+            :gcash-number="publicSettings.gcash_number"
+            :gcash-account-name="publicSettings.gcash_account_name"
+            :submitting="loading"
+            @close="showQrPaymentModal = false"
+            @confirm="submitBookingWithProof"
+        />
     </div>
 </template>
 
@@ -1195,6 +1284,18 @@ const formatToYMD = (date) => {
 .booking-page {
     line-height: 1.6;
     padding-top: 100px;
+}
+
+.btn-outline-gold {
+    border: 1px solid var(--primary-gold) !important;
+    color: var(--primary-gold) !important;
+    background-color: transparent !important;
+    transition: all 0.3s ease;
+}
+
+.btn-outline-gold:hover {
+    background-color: var(--primary-gold) !important;
+    color: white !important;
 }
 
 .section-label-alt {

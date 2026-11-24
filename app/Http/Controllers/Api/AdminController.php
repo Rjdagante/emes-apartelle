@@ -519,6 +519,9 @@ class AdminController extends Controller
      */
     public function broadcastPromo(Request $request)
     {
+        set_time_limit(0);
+        ignore_user_abort(true);
+
         $request->validate([
             'subject' => 'required|string|max:255',
             'message' => 'required|string|max:5000',
@@ -659,6 +662,9 @@ class AdminController extends Controller
      */
     public function broadcastPackage(Request $request)
     {
+        set_time_limit(0);
+        ignore_user_abort(true);
+
         $request->validate([
             'subject' => 'required|string|max:255',
             'message' => 'required|string|max:5000',

@@ -126,6 +126,9 @@
                   </td>
                   <td class="pe-3 py-2.5 text-end text-nowrap sticky-col-actions">
                     <div class="d-flex justify-content-end gap-1.5">
+                      <a v-if="res.payment_screenshot_url" :href="res.payment_screenshot_url" target="_blank" rel="noopener" class="btn btn-action-view" title="View Payment Screenshot">
+                        <i class="bi bi-image"></i>
+                      </a>
                       <button class="btn btn-action-view" title="View Booking Details" @click="openReservationDetailModal(res)">
                         <i class="bi bi-eye"></i>
                       </button>
@@ -547,6 +550,24 @@
                         </div>
                       </div>
                     </div>
+
+                    <!-- Payment Screenshot Proof -->
+                    <div v-if="selectedReservation.payment_screenshot_url" class="detail-card rounded-4 p-3 bg-white shadow-sm border border-light-subtle animate-fade-in">
+                      <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="text-uppercase text-gold fw-bold small tracking-wider mb-0"><i class="bi bi-receipt-cutoff me-2"></i>Payment Screenshot</h6>
+                        <a :href="selectedReservation.payment_screenshot_url" target="_blank" rel="noopener" class="small text-gold fw-semibold text-decoration-none">
+                          Open Full Image <i class="bi bi-box-arrow-up-right ms-1"></i>
+                        </a>
+                      </div>
+                      <a :href="selectedReservation.payment_screenshot_url" target="_blank" rel="noopener" class="d-block text-center bg-light rounded-3 p-2 border">
+                        <img
+                          :src="selectedReservation.payment_screenshot_url"
+                          alt="Guest payment screenshot"
+                          class="img-fluid rounded-2"
+                          style="max-height: 240px; object-fit: contain;"
+                        >
+                      </a>
+                    </div>
                   </div>
 
                   <!-- Right Column: Status & Financial Breakdown -->
@@ -620,9 +641,9 @@
                             <small class="text-muted">Duration & Guests</small>
                             <span class="small fw-semibold text-secondary-dark">{{ selectedReservation.package.duration }} ({{ selectedReservation.package.pax }})</span>
                           </div>
-                          <div class="d-flex justify-content-between align-items-center border-top pt-2 mt-1">
-                            <small class="text-muted">Details</small>
-                            <span class="x-small text-muted" style="font-style: italic;">All-inclusive room accommodation + island tour</span>
+                          <div class="d-flex justify-content-between align-items-start gap-3 border-top pt-2 mt-1">
+                            <small class="text-muted flex-shrink-0">Details</small>
+                            <span class="small text-muted text-end" style="font-style: italic; font-size: 0.8rem;">All-inclusive room accommodation + island tour</span>
                           </div>
                         </template>
                         <template v-else>
@@ -651,14 +672,14 @@
                             <small class="text-muted">Nights</small>
                             <span class="small fw-semibold text-secondary-dark">{{ totalReservationNights(selectedReservation) }} Night{{ totalReservationNights(selectedReservation) > 1 ? 's' : '' }}</span>
                           </div>
-                          <div class="d-flex justify-content-between align-items-center border-top pt-2 mt-1">
-                            <small class="text-muted">Breakdown</small>
-                            <span class="x-small text-muted" style="font-style: italic;">
+                          <div class="d-flex justify-content-between align-items-start gap-3 border-top pt-2 mt-1">
+                            <small class="text-muted flex-shrink-0">Breakdown</small>
+                            <span class="small text-muted text-end" style="font-style: italic; font-size: 0.8rem;">
                               <template v-if="selectedReservation.room?.room_type === 'Family Room' || selectedReservation.room?.room_type === 'Barkadahan Room'">
-                                ((₱{{ formatPrice(selectedReservation.room?.price_per_head) }} × {{ selectedReservation.guests || 1 }} guests) × {{ totalReservationNights(selectedReservation) }} nights)
+                                ₱{{ formatPrice(selectedReservation.room?.price_per_head) }} × {{ selectedReservation.guests || 1 }} guest{{ (selectedReservation.guests || 1) > 1 ? 's' : '' }} × {{ totalReservationNights(selectedReservation) }} night{{ totalReservationNights(selectedReservation) > 1 ? 's' : '' }}
                               </template>
                               <template v-else>
-                                (₱{{ formatPrice(selectedReservation.room?.price_per_night) }} × {{ totalReservationNights(selectedReservation) }} nights)
+                                ₱{{ formatPrice(selectedReservation.room?.price_per_night) }} × {{ totalReservationNights(selectedReservation) }} night{{ totalReservationNights(selectedReservation) > 1 ? 's' : '' }}
                               </template>
                             </span>
                           </div>
@@ -1728,14 +1749,20 @@ const formatDateShort = (dateStr) => {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
+const handleReservationsUpdated = () => {
+  fetchReservations();
+};
+
 onMounted(() => {
   fetchReservations();
   fetchBlockedDates();
   document.addEventListener('click', handleModalClickOutside);
+  window.addEventListener('admin-reservations-updated', handleReservationsUpdated);
 });
 
 onUnmounted(() => {
   document.removeEventListener('click', handleModalClickOutside);
+  window.removeEventListener('admin-reservations-updated', handleReservationsUpdated);
 });
 </script>
 

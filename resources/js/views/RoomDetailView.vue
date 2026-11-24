@@ -7,6 +7,7 @@ import PremiumSwal, { confirm as confirmSwal } from '../utils/sweetalert';
 import { useAuth } from '../store/auth';
 import CalendarPicker from '../components/CalendarPicker.vue';
 import GuestSelector from '../components/GuestSelector.vue';
+import QrPaymentModal from '../components/QrPaymentModal.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -15,9 +16,10 @@ const { state } = useAuth();
 const room = ref(null);
 const loading = ref(true);
 const bookingLoading = ref(false);
+const showQrPaymentModal = ref(false);
 const error = ref(null);
 const activeImage = ref(-1); // Track active image, -1 is for Main Photo
-const systemSettings = ref({ online_booking: true, maintenance_mode: false });
+const systemSettings = ref({ online_booking: true, maintenance_mode: false, gcash_number: '', gcash_account_name: '', gcash_qr_url: null });
 const blockedDates = ref([]);
 
 // Parse guests from query string (e.g. "1 Adult" -> 1)
@@ -190,6 +192,10 @@ const subtotal = computed(() => {
   return basePriceTotal.value + extraBeddingTotal.value;
 });
 
+const amountDue = computed(() => {
+  return booking.payment_option === 'half' ? subtotal.value / 2 : subtotal.value;
+});
+
 const maxSelectableGuests = computed(() => {
   if (!room.value) return 4;
   return Number(room.value.max_occupancy || 4);
@@ -251,7 +257,7 @@ const getStatusBadge = (status) => {
   switch (status) {
     case 'available': return { class: 'badge-available', text: 'Available' };
     case 'unavailable': return { class: 'badge-unavailable', text: 'Booked' };
-    case 'maintenance': return { class: 'badge-maintenance', text: 'Maintenance' };
+    case 'maintenance': return { class: 'badge-maintenance', text: 'Under Maintenance' };
     default: return { class: 'badge-available', text: 'Available' };
   }
 };
@@ -324,21 +330,31 @@ const handleBooking = async () => {
     return;
   }
 
+  // Open QR Payment & Screenshot Upload modal before submitting booking
+  showQrPaymentModal.value = true;
+};
+
+const submitBookingWithProof = async (screenshotFile) => {
   try {
     bookingLoading.value = true;
-    const response = await axios.post('/api/reservations', {
-      room_id: room.value.id,
-      check_in: booking.check_in.includes('T') ? booking.check_in : `${booking.check_in}T13:00:00`,
-      check_out: booking.check_out.includes('T') ? booking.check_out : `${booking.check_out}T11:00:00`,
-      guests: totalGuests.value,
-      adults: booking.adults,
-      children: booking.children,
-      children_ages: booking.children_ages,
-      extra_beds: booking.extra_beds,
-      guest_name: booking.guest_name.trim(),
-      payment_option: 'full'
+    const formData = new FormData();
+    formData.append('room_id', room.value.id);
+    formData.append('check_in', booking.check_in.includes('T') ? booking.check_in : `${booking.check_in}T13:00:00`);
+    formData.append('check_out', booking.check_out.includes('T') ? booking.check_out : `${booking.check_out}T11:00:00`);
+    formData.append('guests', totalGuests.value);
+    formData.append('adults', booking.adults);
+    formData.append('children', booking.children);
+    formData.append('children_ages', JSON.stringify(booking.children_ages || []));
+    formData.append('extra_beds', booking.extra_beds);
+    formData.append('guest_name', booking.guest_name.trim());
+    formData.append('payment_option', booking.payment_option);
+    formData.append('payment_screenshot', screenshotFile);
+
+    const response = await axios.post('/api/reservations', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
     });
 
+    showQrPaymentModal.value = false;
     const reservationId = response.data?.reservation?.id;
     if (reservationId) {
       router.push({ path: '/booking/success', query: { res_id: reservationId } });
@@ -347,10 +363,11 @@ const handleBooking = async () => {
     }
   } catch (err) {
     console.error(err);
+    const firstError = err.response?.data?.payment_screenshot?.[0];
     Swal.fire({
       icon: 'error',
       title: 'Booking Failed',
-      text: err.response?.data?.message || 'Failed to process booking. Please try again.'
+      text: firstError || err.response?.data?.message || 'Failed to process booking. Please try again.'
     });
   } finally {
     bookingLoading.value = false;
@@ -935,6 +952,31 @@ onMounted(() => {
                           required
                         >
                       </div>
+
+                      <!-- Payment Option -->
+                      <div class="col-12 mt-3 mb-3">
+                        <label class="form-label admin-label mb-2 small fw-bold text-muted text-uppercase tracking-wider">Payment Option</label>
+                        <div class="d-flex gap-2">
+                          <button
+                            type="button"
+                            class="btn flex-grow-1 py-2 px-3 fw-bold small text-uppercase"
+                            :class="booking.payment_option === 'full' ? 'btn-gold text-white shadow-gold-sm' : 'btn-outline-gold'"
+                            @click="booking.payment_option = 'full'"
+                            style="font-size: 0.7rem; border-radius: 12px; height: 38px;"
+                          >
+                            Full Payment
+                          </button>
+                          <button
+                            type="button"
+                            class="btn flex-grow-1 py-2 px-3 fw-bold small text-uppercase"
+                            :class="booking.payment_option === 'half' ? 'btn-gold text-white shadow-gold-sm' : 'btn-outline-gold'"
+                            @click="booking.payment_option = 'half'"
+                            style="font-size: 0.7rem; border-radius: 12px; height: 38px;"
+                          >
+                            50% Downpayment
+                          </button>
+                        </div>
+                      </div>
                     
                     <!-- Financial Summary -->
                     <div v-if="totalNights > 0" class="financial-summary mb-4 p-4 rounded-4 bg-gold-lightest border border-gold-light">
@@ -973,16 +1015,20 @@ onMounted(() => {
                         <span class="text-muted small fw-semibold">Service & Tourism Fee</span>
                         <span class="text-success small fw-bold">INCLUDED</span>
                       </div>
-                      <div class="d-flex justify-content-between pt-3 border-top border-gold-light">
+                      <div v-if="booking.payment_option === 'half'" class="d-flex justify-content-between mb-2 border-top border-gold-light pt-2 text-muted">
+                        <span class="x-small fw-semibold">Remaining Balance (Pay at Apartelle)</span>
+                        <span class="small fw-bold">₱{{ formatPrice(subtotal / 2) }}</span>
+                      </div>
+                      <div class="d-flex justify-content-between pt-3 border-top border-gold-light" :class="booking.payment_option === 'half' ? 'border-dashed' : ''">
                         <span class="h5 mb-0 fw-bold text-dark serif-font">
-                          Total Amount
+                          {{ booking.payment_option === 'half' ? 'Downpayment Due' : 'Total Amount' }}
                         </span>
                         <span class="h5 mb-0 fw-bold text-gold serif-font">
-                          ₱{{ formatPrice(subtotal) }}
+                          ₱{{ formatPrice(amountDue) }}
                         </span>
                       </div>
                       <div class="text-muted xx-small text-end mt-1">
-                        Settle at the apartelle upon check-in
+                        {{ booking.payment_option === 'half' ? '50% downpayment now; remaining balance upon check-in' : 'Settle via GCash QR to confirm your booking' }}
                       </div>
                     </div>
 
@@ -1047,6 +1093,20 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <QrPaymentModal
+      :show="showQrPaymentModal"
+      :amount="amountDue"
+      :room-label="room ? `Room #${room.room_number} (${room.room_type})` : ''"
+      :check-in="booking.check_in"
+      :check-out="booking.check_out"
+      :qr-url="systemSettings.gcash_qr_url"
+      :gcash-number="systemSettings.gcash_number"
+      :gcash-account-name="systemSettings.gcash_account_name"
+      :submitting="bookingLoading"
+      @close="showQrPaymentModal = false"
+      @confirm="submitBookingWithProof"
+    />
   </div>
 </template>
 
@@ -1220,7 +1280,8 @@ onMounted(() => {
 
 .calendar-popup {
     box-shadow: 0 15px 30px rgba(0,0,0,0.1);
-    min-width: 280px;
+    width: 292px;
+    min-width: 292px;
 }
 
 @keyframes fadeIn {

@@ -125,6 +125,8 @@ Route::group(['prefix' => 'admin', 'middleware' => ['auth:sanctum']], function (
         Route::post('/guests/{id}/unsuspend', [AdminController::class, 'unsuspendGuest']);
         Route::get('/settings', [SettingController::class, 'index']);
         Route::post('/settings', [SettingController::class, 'store']);
+        Route::post('/settings/qr', [SettingController::class, 'uploadQr']);
+        Route::delete('/settings/qr', [SettingController::class, 'removeQr']);
         Route::apiResource('chatbot-responses', App\Http\Controllers\Api\ChatbotResponseController::class);
     });
 });

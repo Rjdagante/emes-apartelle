@@ -57,8 +57,8 @@
                 </td>
                 <td>
                   <div class="d-flex align-items-center gap-2">
-                    <i class="bi bi-credit-card-2-back text-muted opacity-50"></i>
-                    <span class="small fw-medium">{{ mapPaymentMethod(pay.method) }}</span>
+                    <i class="bi text-muted opacity-50" :class="isQrPayment(pay) ? 'bi-qr-code-scan' : 'bi-credit-card-2-back'"></i>
+                    <span class="small fw-medium">{{ mapPaymentMethod(pay.method, pay.reservation) }}</span>
                   </div>
                 </td>
                 <td><span class="fw-bold text-secondary-dark">₱{{ formatAmount(pay.amount) }}</span></td>
@@ -184,7 +184,7 @@
                           {{ pay.reservation.user.phone }}
                         </small>
                       </td>
-                      <td class="py-2 px-3">{{ mapPaymentMethod(pay.method) }}</td>
+                      <td class="py-2 px-3">{{ mapPaymentMethod(pay.method, pay.reservation) }}</td>
                       <td class="py-2 px-3 text-end fw-bold text-dark">₱{{ formatAmount(pay.amount) }}</td>
                       <td class="py-2 px-3 text-center">
                         <span class="badge rounded-pill fw-bold text-uppercase" :class="getStatusClass(pay.status)" style="font-size: 0.62rem;">
@@ -337,18 +337,26 @@ const getStatusClass = (status) => {
   return 'bg-warning-subtle text-warning';
 };
 
-const mapPaymentMethod = (method) => {
+const isQrPayment = (pay) => {
+  const m = String(pay?.method || '').toLowerCase();
+  return m === 'qr payment' || m === 'qr_payment' || m === 'qr_code' || m === 'qrph' || Boolean(pay?.reservation?.payment_screenshot);
+};
+
+const mapPaymentMethod = (method, reservation = null) => {
+  if (reservation?.payment_screenshot) return 'QR Payment';
   if (!method) return 'N/A';
   const m = method.toLowerCase();
   const map = {
+    'qr payment': 'QR Payment',
+    'qr_payment': 'QR Payment',
     'gcash': 'GCash (E-Wallet)',
     'grab_pay': 'GrabPay (E-Wallet)',
     'maya': 'Maya / PayMaya',
     'paymaya': 'Maya / PayMaya',
     'card': 'Credit/Debit Card',
     'credit_card': 'Credit/Debit Card',
-    'qrph': 'QRPh / QR Code',
-    'qr_code': 'QR Code',
+    'qrph': 'QR Payment',
+    'qr_code': 'QR Payment',
     'ewallet': 'E-Wallet',
     'dob': 'Direct Online Banking',
     'dob_ubp': 'UnionBank (Online)',
@@ -426,7 +434,7 @@ const dailyMethodBreakdown = computed(() => {
   dailyPayments.value.forEach(p => {
     const s = String(p.status).toLowerCase();
     if (s === 'succeeded' || s === 'successful' || s === 'paid') {
-      const methodLabel = mapPaymentMethod(p.method);
+      const methodLabel = mapPaymentMethod(p.method, p.reservation);
       map[methodLabel] = (map[methodLabel] || 0) + parseFloat(p.amount || 0);
     }
   });

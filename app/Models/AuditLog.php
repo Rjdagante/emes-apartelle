@@ -151,4 +151,59 @@ class AuditLog extends Model
             'user_agent' => $request?->userAgent(),
         ]);
     }
+
+    /**
+     * Record a user authentication activity (e.g. login) into the audit log.
+     */
+    public static function recordAuthActivity(
+        User $user,
+        string $action = 'user_login',
+        string $method = 'Password',
+        ?Request $request = null
+    ): self {
+        $request = $request ?? request();
+
+        $actorName = $user->name ?: trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''));
+        $rawRole = strtolower((string) ($user->role ?? 'guest'));
+        $actorRole = in_array($rawRole, ['admin', 'staff', 'guest'], true) ? $rawRole : 'guest';
+        $roleLabel = ucfirst($actorRole);
+
+        $description = match ($action) {
+            'user_login' => "{$roleLabel} {$actorName} ({$user->email}) logged in to the system via {$method}.",
+            'user_logout' => "{$roleLabel} {$actorName} ({$user->email}) logged out of the system.",
+            default => "{$roleLabel} {$actorName} ({$user->email}) performed {$action}.",
+        };
+
+        return static::create([
+            'user_id' => $user->id,
+            'actor_name' => $actorName,
+            'actor_email' => $user->email,
+            'actor_role' => $actorRole,
+            'action' => $action,
+            'entity_type' => 'user',
+            'entity_id' => $user->id,
+            'reservation_id' => null,
+            'room_id' => null,
+            'room_number' => null,
+            'room_type' => null,
+            'guest_name' => null,
+            'guest_email' => null,
+            'guest_phone' => null,
+            'guests_count' => 0,
+            'adults_count' => 0,
+            'children_count' => 0,
+            'check_in' => null,
+            'check_out' => null,
+            'total_amount' => null,
+            'payment_status' => null,
+            'description' => $description,
+            'old_values' => null,
+            'new_values' => [
+                'method' => $method,
+                'ip_address' => $request?->ip(),
+            ],
+            'ip_address' => $request?->ip(),
+            'user_agent' => $request?->userAgent(),
+        ]);
+    }
 }

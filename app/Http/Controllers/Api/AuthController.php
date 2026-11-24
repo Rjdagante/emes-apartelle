@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\TrustedDevice;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -66,6 +67,7 @@ class AuthController extends Controller
             'email' => ['required', 'string', 'email'],
             'password' => ['required', 'string'],
             'device_fingerprint' => ['nullable', 'string', 'max:128'],
+            'remember' => ['nullable', 'boolean'],
         ]);
 
         $user = User::where('email', $request->email)->first();
@@ -79,6 +81,11 @@ class AuthController extends Controller
         // Bypass Multi-Factor Authentication for Administrator and Staff accounts
         if (in_array($user->role, ['admin', 'staff'])) {
             $token = $user->createToken('auth_token')->plainTextToken;
+            try {
+                AuditLog::recordAuthActivity($user, 'user_login', 'Password', $request);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error('AuditLog (admin/staff login) failed: ' . $e->getMessage());
+            }
             return response()->json([
                 'access_token' => $token,
                 'token_type' => 'Bearer',
@@ -86,9 +93,9 @@ class AuthController extends Controller
             ]);
         }
 
-        // Check if this device is already trusted (skip MFA for recognized devices)
+        // Only skip MFA for a trusted device when "Remember me" is checked
         $fingerprint = $request->input('device_fingerprint');
-        if ($fingerprint) {
+        if ($request->boolean('remember') && $fingerprint) {
             $trustedDevice = TrustedDevice::where('user_id', $user->id)
                 ->where('device_fingerprint', $fingerprint)
                 ->active()
@@ -102,6 +109,11 @@ class AuthController extends Controller
                 ]);
 
                 $token = $user->createToken('auth_token')->plainTextToken;
+                try {
+                    AuditLog::recordAuthActivity($user, 'user_login', 'Trusted Device', $request);
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::error('AuditLog (trusted device login) failed: ' . $e->getMessage());
+                }
                 return response()->json([
                     'access_token' => $token,
                     'token_type' => 'Bearer',
@@ -143,6 +155,7 @@ class AuthController extends Controller
             'email' => ['required', 'string', 'email'],
             'otp' => ['required', 'string', 'size:6'],
             'device_fingerprint' => ['nullable', 'string', 'max:128'],
+            'remember' => ['nullable', 'boolean'],
         ]);
 
         $user = User::where('email', $request->email)->first();
@@ -164,9 +177,9 @@ class AuthController extends Controller
         $user->otp_expires_at = null;
         $user->save();
 
-        // Save this device as trusted for 90 days so future logins skip MFA
+        // Only save this device as trusted when "Remember me" is checked
         $fingerprint = $request->input('device_fingerprint');
-        if ($fingerprint) {
+        if ($request->boolean('remember') && $fingerprint) {
             TrustedDevice::updateOrCreate(
                 [
                     'user_id' => $user->id,
@@ -184,6 +197,12 @@ class AuthController extends Controller
         // Create Sanctum access token
         $token = $user->createToken('auth_token')->plainTextToken;
 
+        try {
+            AuditLog::recordAuthActivity($user, 'user_login', 'Email & OTP', $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('AuditLog (OTP login) failed: ' . $e->getMessage());
+        }
+
         return response()->json([
             'access_token' => $token,
             'token_type' => 'Bearer',
@@ -193,7 +212,15 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
-        $request->user()->currentAccessToken()->delete();
+        $user = $request->user();
+        if ($user) {
+            try {
+                AuditLog::recordAuthActivity($user, 'user_logout', 'Session Logout', $request);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error('AuditLog (logout) failed: ' . $e->getMessage());
+            }
+            $user->currentAccessToken()?->delete();
+        }
 
         return response()->json([
             'message' => 'Successfully logged out'

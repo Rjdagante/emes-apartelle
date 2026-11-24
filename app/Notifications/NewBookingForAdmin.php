@@ -36,14 +36,20 @@ class NewBookingForAdmin extends Notification
      */
     public function toArray(object $notifiable): array
     {
+        $guestName = $this->reservation->guest_name ?: ($this->reservation->user->name ?? 'Guest');
+        $hasProof = !empty($this->reservation->payment_screenshot);
+
         return [
             'type' => 'reservation', // Custom type to distinguish for SweetAlert
-            'icon' => 'bi-calendar-check-fill',
-            'title' => 'New Reservation!',
-            'message' => 'Guest ' . ($this->reservation->user->name ?? 'User') . ' booked Room #' . $this->reservation->room->room_number . ' for ' . $this->reservation->check_in . '.',
+            'icon' => $hasProof ? 'bi-receipt-cutoff' : 'bi-calendar-check-fill',
+            'title' => $hasProof ? 'New Booking & Payment Proof!' : 'New Reservation!',
+            'message' => $hasProof
+                ? "Guest {$guestName} booked Room #{$this->reservation->room->room_number} for {$this->reservation->check_in} and uploaded a payment screenshot for verification."
+                : "Guest {$guestName} booked Room #{$this->reservation->room->room_number} for {$this->reservation->check_in}.",
             'action_url' => '/admin/reservations',
-            'action_text' => 'View Details',
-            'reservation_id' => $this->reservation->id
+            'action_text' => $hasProof ? 'Verify Payment' : 'View Details',
+            'reservation_id' => $this->reservation->id,
+            'payment_screenshot_url' => $this->reservation->payment_screenshot_url,
         ];
     }
 }

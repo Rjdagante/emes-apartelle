@@ -80,7 +80,7 @@ const getStatusBadge = (status) => {
     switch (status) {
         case 'available': return { class: 'badge-available', text: 'Available', icon: 'bi-check-circle-fill' };
         case 'unavailable': return { class: 'badge-unavailable', text: 'Booked', icon: 'bi-x-circle-fill' };
-        case 'maintenance': return { class: 'badge-maintenance', text: 'Maintenance', icon: 'bi-tools' };
+        case 'maintenance': return { class: 'badge-maintenance', text: 'Under Maintenance', icon: 'bi-tools' };
         default: return { class: 'badge-available', text: 'Available', icon: 'bi-check-circle-fill' };
     }
 };

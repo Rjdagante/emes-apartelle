@@ -157,6 +157,8 @@
               @change="applyFilters"
             >
               <option value="all">All Activities</option>
+              <option value="user_login">User Login</option>
+              <option value="user_logout">User Logout</option>
               <option value="booking_created">Booking Created</option>
               <option value="booking_confirmed">Booking Confirmed</option>
               <option value="check_in">Check-in</option>
@@ -262,7 +264,10 @@
                     <span class="badge rounded-pill px-2.5 py-1.5 fw-bold text-uppercase" :class="actionBadgeClass(log.action)" style="font-size: 0.65rem;">
                       {{ formatActionLabel(log.action) }}
                     </span>
-                    <div v-if="log.entity_id" class="text-muted mt-1" style="font-size: 0.7rem;">
+                    <div v-if="isAuthLog(log)" class="text-muted mt-1" style="font-size: 0.7rem;">
+                      {{ log.new_values?.method || (log.action === 'user_logout' ? 'Session Logout' : 'System Sign In') }}
+                    </div>
+                    <div v-else-if="log.entity_id" class="text-muted mt-1" style="font-size: 0.7rem;">
                       #RES-{{ String(log.entity_id).padStart(3, '0') }}
                     </div>
                   </td>
@@ -293,37 +298,58 @@
 
                   <!-- Room & Guests -->
                   <td class="py-3 text-nowrap">
-                    <div class="small fw-bold text-secondary-dark">
-                      {{ log.room_type || 'Room' }}
-                      <span v-if="log.room_number" class="text-gold">#{{ log.room_number }}</span>
-                    </div>
-                    <small class="text-muted d-block" style="font-size: 0.74rem;">
-                      <i class="bi bi-people me-1"></i>
-                      <strong>{{ log.guests_count }}</strong> {{ log.guests_count === 1 ? 'Guest' : 'Guests' }}
-                      <span v-if="log.adults_count || log.children_count" class="ms-1">
-                        ({{ log.adults_count }}A<template v-if="log.children_count > 0">, {{ log.children_count }}C</template>)
-                      </span>
-                    </small>
+                    <template v-if="isAuthLog(log)">
+                      <div class="small fw-bold text-secondary-dark">System Access</div>
+                      <small class="text-muted d-block" style="font-size: 0.74rem;" v-if="log.ip_address">
+                        <i class="bi bi-globe me-1"></i>{{ log.ip_address }}
+                      </small>
+                    </template>
+                    <template v-else>
+                      <div class="small fw-bold text-secondary-dark">
+                        {{ log.room_type || 'Room' }}
+                        <span v-if="log.room_number" class="text-gold">#{{ log.room_number }}</span>
+                      </div>
+                      <small class="text-muted d-block" style="font-size: 0.74rem;">
+                        <i class="bi bi-people me-1"></i>
+                        <strong>{{ log.guests_count }}</strong> {{ log.guests_count === 1 ? 'Guest' : 'Guests' }}
+                        <span v-if="log.adults_count || log.children_count" class="ms-1">
+                          ({{ log.adults_count }}A<template v-if="log.children_count > 0">, {{ log.children_count }}C</template>)
+                        </span>
+                      </small>
+                    </template>
                   </td>
 
                   <!-- Guest & Stay Schedule -->
                   <td class="py-3">
-                    <div class="small fw-semibold text-secondary-dark text-truncate" style="max-width: 180px;">
-                      {{ log.guest_name || '—' }}
-                    </div>
-                    <small class="text-muted d-block text-nowrap" style="font-size: 0.72rem;" v-if="log.check_in && log.check_out">
-                      <i class="bi bi-calendar-event me-1"></i>{{ formatShortDate(log.check_in) }} – {{ formatShortDate(log.check_out) }}
-                    </small>
+                    <template v-if="isAuthLog(log)">
+                      <div class="small fw-semibold text-secondary-dark text-truncate" style="max-width: 180px;">
+                        {{ parseDeviceLabel(log.user_agent) }}
+                      </div>
+                      <small class="text-muted d-block text-nowrap" style="font-size: 0.72rem;">
+                        {{ log.action === 'user_logout' ? 'Signed out' : 'Signed in' }}
+                      </small>
+                    </template>
+                    <template v-else>
+                      <div class="small fw-semibold text-secondary-dark text-truncate" style="max-width: 180px;">
+                        {{ log.guest_name || '—' }}
+                      </div>
+                      <small class="text-muted d-block text-nowrap" style="font-size: 0.72rem;" v-if="log.check_in && log.check_out">
+                        <i class="bi bi-calendar-event me-1"></i>{{ formatShortDate(log.check_in) }} – {{ formatShortDate(log.check_out) }}
+                      </small>
+                    </template>
                   </td>
 
                   <!-- Amount -->
                   <td class="py-3 text-nowrap">
-                    <div class="small fw-bold text-secondary-dark" v-if="log.total_amount !== null && log.total_amount !== undefined">
-                      ₱{{ formatAmount(log.total_amount) }}
-                    </div>
-                    <span v-if="log.payment_status" class="badge rounded-pill text-uppercase" :class="paymentBadgeClass(log.payment_status)" style="font-size: 0.6rem;">
-                      {{ formatActionLabel(log.payment_status) }}
-                    </span>
+                    <template v-if="log.total_amount !== null && log.total_amount !== undefined">
+                      <div class="small fw-bold text-secondary-dark">
+                        ₱{{ formatAmount(log.total_amount) }}
+                      </div>
+                      <span v-if="log.payment_status" class="badge rounded-pill text-uppercase" :class="paymentBadgeClass(log.payment_status)" style="font-size: 0.6rem;">
+                        {{ formatActionLabel(log.payment_status) }}
+                      </span>
+                    </template>
+                    <span v-else class="text-muted small">—</span>
                   </td>
 
                   <!-- Details Action -->
@@ -468,42 +494,70 @@
                 <div class="text-muted" style="font-size: 0.74rem;" v-if="selectedLog.actor_email">{{ selectedLog.actor_email }}</div>
               </div>
 
-              <div class="col-sm-6">
-                <div class="text-muted text-uppercase fw-bold" style="font-size: 0.68rem;">Room</div>
-                <div class="fw-semibold text-secondary-dark mt-0.5">
-                  {{ selectedLog.room_type || 'N/A' }}
-                  <span v-if="selectedLog.room_number" class="text-gold">#{{ selectedLog.room_number }}</span>
+              <template v-if="isAuthLog(selectedLog)">
+                <div class="col-sm-6">
+                  <div class="text-muted text-uppercase fw-bold" style="font-size: 0.68rem;">{{ selectedLog.action === 'user_logout' ? 'Logout Type' : 'Sign-in Method' }}</div>
+                  <div class="fw-semibold text-secondary-dark mt-0.5">
+                    {{ selectedLog.new_values?.method || (selectedLog.action === 'user_logout' ? 'Session Logout' : 'Password') }}
+                  </div>
                 </div>
-              </div>
 
-              <div class="col-sm-6">
-                <div class="text-muted text-uppercase fw-bold" style="font-size: 0.68rem;">Guests Count</div>
-                <div class="fw-semibold text-secondary-dark mt-0.5">
-                  {{ selectedLog.guests_count }} {{ selectedLog.guests_count === 1 ? 'Guest' : 'Guests' }}
-                  ({{ selectedLog.adults_count }} Adult{{ selectedLog.adults_count === 1 ? '' : 's' }}<template v-if="selectedLog.children_count > 0">, {{ selectedLog.children_count }} Child{{ selectedLog.children_count === 1 ? '' : 'ren' }}</template>)
+                <div class="col-sm-6">
+                  <div class="text-muted text-uppercase fw-bold" style="font-size: 0.68rem;">IP Address</div>
+                  <div class="fw-semibold text-secondary-dark mt-0.5">
+                    {{ selectedLog.ip_address || '—' }}
+                  </div>
                 </div>
-              </div>
 
-              <div class="col-sm-6">
-                <div class="text-muted text-uppercase fw-bold" style="font-size: 0.68rem;">Guest Details</div>
-                <div class="fw-semibold text-secondary-dark mt-0.5">{{ selectedLog.guest_name || '—' }}</div>
-                <div class="text-muted" style="font-size: 0.74rem;" v-if="selectedLog.guest_email">{{ selectedLog.guest_email }}</div>
-                <div class="text-muted" style="font-size: 0.74rem;" v-if="selectedLog.guest_phone && selectedLog.guest_phone !== 'N/A'">{{ selectedLog.guest_phone }}</div>
-              </div>
+                <div class="col-12">
+                  <div class="text-muted text-uppercase fw-bold" style="font-size: 0.68rem;">Device / Browser</div>
+                  <div class="fw-semibold text-secondary-dark mt-0.5">
+                    {{ parseDeviceLabel(selectedLog.user_agent) }}
+                  </div>
+                  <div class="text-muted mt-0.5" style="font-size: 0.72rem; word-break: break-all;" v-if="selectedLog.user_agent">
+                    {{ selectedLog.user_agent }}
+                  </div>
+                </div>
+              </template>
 
-              <div class="col-sm-6">
-                <div class="text-muted text-uppercase fw-bold" style="font-size: 0.68rem;">Booking Reference &amp; Amount</div>
-                <div class="fw-semibold text-secondary-dark mt-0.5">
-                  <span v-if="selectedLog.entity_id">#RES-{{ String(selectedLog.entity_id).padStart(3, '0') }}</span>
-                  <span v-else>—</span>
-                  <span v-if="selectedLog.total_amount !== null" class="ms-2 text-gold">₱{{ formatAmount(selectedLog.total_amount) }}</span>
+              <template v-else>
+                <div class="col-sm-6">
+                  <div class="text-muted text-uppercase fw-bold" style="font-size: 0.68rem;">Room</div>
+                  <div class="fw-semibold text-secondary-dark mt-0.5">
+                    {{ selectedLog.room_type || 'N/A' }}
+                    <span v-if="selectedLog.room_number" class="text-gold">#{{ selectedLog.room_number }}</span>
+                  </div>
                 </div>
-                <div v-if="selectedLog.payment_status" class="mt-1">
-                  <span class="badge rounded-pill text-uppercase" :class="paymentBadgeClass(selectedLog.payment_status)" style="font-size: 0.6rem;">
-                    {{ formatActionLabel(selectedLog.payment_status) }}
-                  </span>
+
+                <div class="col-sm-6">
+                  <div class="text-muted text-uppercase fw-bold" style="font-size: 0.68rem;">Guests Count</div>
+                  <div class="fw-semibold text-secondary-dark mt-0.5">
+                    {{ selectedLog.guests_count }} {{ selectedLog.guests_count === 1 ? 'Guest' : 'Guests' }}
+                    ({{ selectedLog.adults_count }} Adult{{ selectedLog.adults_count === 1 ? '' : 's' }}<template v-if="selectedLog.children_count > 0">, {{ selectedLog.children_count }} Child{{ selectedLog.children_count === 1 ? '' : 'ren' }}</template>)
+                  </div>
                 </div>
-              </div>
+
+                <div class="col-sm-6">
+                  <div class="text-muted text-uppercase fw-bold" style="font-size: 0.68rem;">Guest Details</div>
+                  <div class="fw-semibold text-secondary-dark mt-0.5">{{ selectedLog.guest_name || '—' }}</div>
+                  <div class="text-muted" style="font-size: 0.74rem;" v-if="selectedLog.guest_email">{{ selectedLog.guest_email }}</div>
+                  <div class="text-muted" style="font-size: 0.74rem;" v-if="selectedLog.guest_phone && selectedLog.guest_phone !== 'N/A'">{{ selectedLog.guest_phone }}</div>
+                </div>
+
+                <div class="col-sm-6">
+                  <div class="text-muted text-uppercase fw-bold" style="font-size: 0.68rem;">Booking Reference &amp; Amount</div>
+                  <div class="fw-semibold text-secondary-dark mt-0.5">
+                    <span v-if="selectedLog.entity_id">#RES-{{ String(selectedLog.entity_id).padStart(3, '0') }}</span>
+                    <span v-else>—</span>
+                    <span v-if="selectedLog.total_amount !== null" class="ms-2 text-gold">₱{{ formatAmount(selectedLog.total_amount) }}</span>
+                  </div>
+                  <div v-if="selectedLog.payment_status" class="mt-1">
+                    <span class="badge rounded-pill text-uppercase" :class="paymentBadgeClass(selectedLog.payment_status)" style="font-size: 0.6rem;">
+                      {{ formatActionLabel(selectedLog.payment_status) }}
+                    </span>
+                  </div>
+                </div>
+              </template>
 
               <div class="col-sm-6" v-if="selectedLog.check_in">
                 <div class="text-muted text-uppercase fw-bold" style="font-size: 0.68rem;">Check-in</div>
@@ -790,10 +844,21 @@ const printReport = async () => {
 
     const logRows = allLogs.map(log => {
       const ts = log.updated_at || log.created_at;
-      const refStr = log.entity_id ? `#RES-${String(log.entity_id).padStart(3, '0')}` : '—';
-      const stayStr = (log.check_in && log.check_out) ? `${formatShortDate(log.check_in)} – ${formatShortDate(log.check_out)}` : '—';
+      const authEntry = isAuthLog(log);
+      const refStr = authEntry
+        ? (log.new_values?.method || (log.action === 'user_logout' ? 'Session Logout' : 'System Sign In'))
+        : (log.entity_id ? `#RES-${String(log.entity_id).padStart(3, '0')}` : '—');
+      const stayStr = authEntry
+        ? (log.action === 'user_logout' ? 'Signed out' : 'Signed in')
+        : ((log.check_in && log.check_out) ? `${formatShortDate(log.check_in)} – ${formatShortDate(log.check_out)}` : '—');
       const amtStr = (log.total_amount !== null && log.total_amount !== undefined) ? `₱${formatAmount(log.total_amount)}` : '—';
       const guestBreakdown = `${log.guests_count || 1} (${log.adults_count || 1}A${log.children_count > 0 ? `, ${log.children_count}C` : ''})`;
+      const roomCell = authEntry
+        ? `<div><strong>System Access</strong></div>${log.ip_address ? `<div style="font-size: 9px; color: #64748b;">IP: ${escapeHtml(log.ip_address)}</div>` : ''}`
+        : `<div><strong>${escapeHtml(log.room_type || 'Room')}</strong>${log.room_number ? ` #${escapeHtml(log.room_number)}` : ''}</div><div style="font-size: 9px; color: #64748b;">Guests: ${escapeHtml(guestBreakdown)}</div>`;
+      const guestCell = authEntry
+        ? `<div style="font-weight: 600;">${escapeHtml(parseDeviceLabel(log.user_agent))}</div><div style="font-size: 9px; color: #64748b;">${escapeHtml(stayStr)}</div>`
+        : `<div style="font-weight: 600;">${escapeHtml(log.guest_name || '—')}</div><div style="font-size: 9px; color: #64748b;">${escapeHtml(stayStr)}</div>`;
       return `
         <tr>
           <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; white-space: nowrap;">
@@ -809,12 +874,10 @@ const printReport = async () => {
             ${log.actor_email ? `<div style="font-size: 9px; color: #64748b;">${escapeHtml(log.actor_email)}</div>` : ''}
           </td>
           <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">
-            <div><strong>${escapeHtml(log.room_type || 'Room')}</strong>${log.room_number ? ` #${escapeHtml(log.room_number)}` : ''}</div>
-            <div style="font-size: 9px; color: #64748b;">Guests: ${escapeHtml(guestBreakdown)}</div>
+            ${roomCell}
           </td>
           <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0;">
-            <div style="font-weight: 600;">${escapeHtml(log.guest_name || '—')}</div>
-            <div style="font-size: 9px; color: #64748b;">${escapeHtml(stayStr)}</div>
+            ${guestCell}
           </td>
           <td style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; text-align: right; white-space: nowrap;">
             <div style="font-weight: bold;">${escapeHtml(amtStr)}</div>
@@ -996,8 +1059,35 @@ const formatActionLabel = (action) => {
   return action.replace(/_/g, ' ');
 };
 
+const isAuthLog = (log) => {
+  return Boolean(log && (log.action === 'user_login' || log.action === 'user_logout' || log.entity_type === 'user'));
+};
+
+const parseDeviceLabel = (ua) => {
+  if (!ua) return 'Unknown Device';
+  let browser = 'Browser';
+  if (ua.includes('Edg/')) browser = 'Edge';
+  else if (ua.includes('OPR/') || ua.includes('Opera')) browser = 'Opera';
+  else if (ua.includes('Chrome/')) browser = 'Chrome';
+  else if (ua.includes('Safari/')) browser = 'Safari';
+  else if (ua.includes('Firefox/')) browser = 'Firefox';
+
+  let os = '';
+  if (ua.includes('Windows')) os = 'Windows';
+  else if (ua.includes('Macintosh') || ua.includes('Mac OS')) os = 'macOS';
+  else if (ua.includes('Android')) os = 'Android';
+  else if (ua.includes('iPhone') || ua.includes('iPad')) os = 'iOS';
+  else if (ua.includes('Linux')) os = 'Linux';
+
+  return os ? `${browser} on ${os}` : browser;
+};
+
 const actionBadgeClass = (action) => {
   switch (action) {
+    case 'user_login':
+      return 'bg-login-subtle text-login';
+    case 'user_logout':
+      return 'bg-logout-subtle text-logout';
     case 'booking_created':
       return 'bg-gold-subtle text-gold';
     case 'booking_confirmed':
@@ -1084,6 +1174,22 @@ onMounted(() => {
 
 .bg-gold-subtle {
   background-color: rgba(188, 145, 81, 0.14);
+}
+
+.bg-login-subtle {
+  background-color: rgba(79, 70, 229, 0.12);
+}
+
+.text-login {
+  color: #4338ca;
+}
+
+.bg-logout-subtle {
+  background-color: rgba(100, 116, 139, 0.14);
+}
+
+.text-logout {
+  color: #475569;
 }
 
 .text-gold {

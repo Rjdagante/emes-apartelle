@@ -311,7 +311,8 @@ const handleLogin = async () => {
   try {
     const response = await login({
       email: form.email,
-      password: form.password
+      password: form.password,
+      remember: form.remember
     });
     
     // Check if OTP was sent successfully and requires verification
@@ -367,7 +368,8 @@ const handleVerifyOtp = async () => {
   try {
     const response = await verifyOtp({
       email: form.email,
-      otp: otpForm.code
+      otp: otpForm.code,
+      remember: form.remember
     });
 
     // Check if the user is administrative or staff trying to use the guest portal
@@ -408,7 +410,8 @@ const handleResendOtp = async () => {
   try {
     const response = await login({
       email: form.email,
-      password: form.password
+      password: form.password,
+      remember: form.remember
     });
     
     if (response.mfa_required) {

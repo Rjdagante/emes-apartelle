@@ -237,23 +237,53 @@ const triggerNewDisputeAlert = (notif) => {
     });
 };
 
+const triggerBookingUpdateAlert = (notif) => {
+    const isReschedule = notif.data?.type === 'booking_rescheduled';
+    Swal.fire({
+        title: notif.data?.title || (isReschedule ? 'Booking Rescheduled!' : 'Stay Extended!'),
+        text: notif.data?.message || '',
+        icon: 'info',
+        iconColor: '#BC9151',
+        showCancelButton: true,
+        confirmButtonColor: '#BC9151',
+        cancelButtonColor: '#718096',
+        confirmButtonText: 'View Reservation',
+        cancelButtonText: 'Later',
+        background: '#fcfaf7',
+    }).then((result) => {
+        if (result.isConfirmed) {
+            if (notif.data && notif.data.reservation_id) {
+                router.push({ path: '/admin/reservations', query: { id: notif.data.reservation_id } });
+            } else {
+                router.push('/admin/reservations');
+            }
+        }
+    });
+};
+
 const fetchNotifications = async () => {
     try {
         const response = await axios.get('/api/notifications');
         const newNotifications = response.data.notifications;
         
-        // Detect new reservation or dispute notification
+        // Detect new reservation, reschedule, stay extension, or dispute notification
         if (newNotifications.length > 0) {
             const latest = newNotifications[0];
             if (latest.id !== lastSeenNotificationId.value) {
-                // If it's a reservation type or title contains "New Reservation"
-                if (latest.data.type === 'reservation' || latest.data.title.includes('New Reservation')) {
-                    // Only alert if we've already initialized (not on first load)
+                const notifType = latest.data?.type || '';
+                const notifTitle = latest.data?.title || '';
+
+                if (notifType === 'reservation' || notifTitle.includes('New Reservation') || notifTitle.includes('New Booking')) {
                     if (lastSeenNotificationId.value !== null) {
+                        window.dispatchEvent(new CustomEvent('admin-reservations-updated'));
                         triggerNewReservationAlert(latest);
                     }
-                } else if (latest.data.type === 'dispute' || latest.data.title.includes('Dispute')) {
-                    // Only alert if we've already initialized (not on first load)
+                } else if (notifType === 'booking_rescheduled' || notifType === 'stay_extended') {
+                    if (lastSeenNotificationId.value !== null) {
+                        window.dispatchEvent(new CustomEvent('admin-reservations-updated'));
+                        triggerBookingUpdateAlert(latest);
+                    }
+                } else if (notifType === 'dispute' || notifTitle.includes('Dispute')) {
                     if (lastSeenNotificationId.value !== null) {
                         triggerNewDisputeAlert(latest);
                     }
@@ -297,7 +327,7 @@ const handleNotificationClick = async (notif) => {
 
     // Redirect if there's an action_url
     if (notif.data && notif.data.action_url) {
-        if (notif.data.type === 'reservation' && notif.data.reservation_id) {
+        if (['reservation', 'booking_rescheduled', 'stay_extended'].includes(notif.data.type) && notif.data.reservation_id) {
             router.push({ path: '/admin/reservations', query: { id: notif.data.reservation_id } });
         } else {
             router.push(notif.data.action_url);

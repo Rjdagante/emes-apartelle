@@ -576,6 +576,36 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- QR Payment & Screenshot Upload Modal for Extending Stay -->
+    <QrPaymentModal
+      :show="showExtendQrModal"
+      :amount="additionalCost"
+      :room-label="extendingBooking ? `Room #${extendingBooking.room?.room_number} (${extendingBooking.room?.room_type})` : ''"
+      :check-in="extendingBooking?.check_in || ''"
+      :check-out="newCheckOut"
+      :qr-url="publicSettings.gcash_qr_url"
+      :gcash-number="publicSettings.gcash_number"
+      :gcash-account-name="publicSettings.gcash_account_name"
+      :submitting="submittingExtension"
+      @close="showExtendQrModal = false"
+      @confirm="submitExtensionWithProof"
+    />
+
+    <!-- QR Payment & Screenshot Upload Modal for Rescheduling -->
+    <QrPaymentModal
+      :show="showReschedQrModal"
+      :amount="reschedQrAmount"
+      :room-label="rescheduleBooking ? `Room #${rescheduleBooking.room?.room_number} (${rescheduleBooking.room?.room_type})` : ''"
+      :check-in="reschedCheckIn"
+      :check-out="reschedCheckOut"
+      :qr-url="publicSettings.gcash_qr_url"
+      :gcash-number="publicSettings.gcash_number"
+      :gcash-account-name="publicSettings.gcash_account_name"
+      :submitting="submittingReschedule"
+      @close="showReschedQrModal = false"
+      @confirm="submitRescheduleWithProof"
+    />
   </div>
 </template>
 
@@ -585,6 +615,7 @@ import axios from 'axios';
 import Swal from 'sweetalert2';
 import { useAuth } from '../store/auth';
 import CalendarPicker from '../components/CalendarPicker.vue';
+import QrPaymentModal from '../components/QrPaymentModal.vue';
 
 const { state } = useAuth();
 
@@ -595,6 +626,7 @@ const cancelling = ref(null);
 
 // Extend Stay Modal State
 const showExtendModal = ref(false);
+const showExtendQrModal = ref(false);
 const extendingBooking = ref(null);
 const newCheckOut = ref('');
 const extendingBookedDates = ref([]);
@@ -603,6 +635,8 @@ const submittingExtension = ref(false);
 
 // Reschedule Modal State
 const showRescheduleModal = ref(false);
+const showReschedQrModal = ref(false);
+const publicSettings = ref({ gcash_number: '', gcash_account_name: '', gcash_qr_url: null });
 const rescheduleBooking = ref(null);
 const reschedCheckIn = ref('');
 const reschedCheckOut = ref('');
@@ -687,17 +721,18 @@ const reschedNewTotalAmount = computed(() => {
     if (!room) return 0;
 
     const isPerHead = room.room_type === 'Family Room' || room.room_type === 'Barkadahan Room';
-    const nightlyRate = isPerHead ? Number(room.price_per_head || 0) : Number(room.price_per_night || 0);
-    const extraBedRate = Number(room.extra_bed_price ?? 300);
+    const nightlyRate = isPerHead
+        ? (room.is_promo && Number(room.promo_price_per_head) > 0 ? Number(room.promo_price_per_head) : Number(room.price_per_head || 0))
+        : (room.is_promo && Number(room.promo_price) > 0 ? Number(room.promo_price) : Number(room.price_per_night || 0));
 
     const adults = Number(rescheduleBooking.value.adults ?? rescheduleBooking.value.guests ?? 1);
     const children = Number(rescheduleBooking.value.children ?? 0);
-    const totalGuests = Math.max(1, adults + children);
 
     const baseOccupancy = Number(room.base_occupancy || 1);
     const maxOccupancy = Number(room.max_occupancy || baseOccupancy);
-    const extraGuests = Math.max(0, totalGuests - maxOccupancy);
-    const extraBedCost = extraGuests * extraBedRate * reschedNewNights.value;
+
+    // Keep the reservation's existing extra bed charge unchanged (do not drop it or multiply it for extra nights)
+    const existingExtraBedCharge = Number(rescheduleBooking.value.extra_bed_charge || 0);
 
     let baseCost = 0;
     if (isPerHead) {
@@ -718,7 +753,7 @@ const reschedNewTotalAmount = computed(() => {
         baseCost = nightlyRate * reschedNewNights.value;
     }
 
-    return baseCost + extraBedCost;
+    return baseCost + existingExtraBedCharge;
 });
 
 const reschedAdditionalAmount = computed(() => {
@@ -764,18 +799,24 @@ const additionalCost = computed(() => {
     if (!extendingBooking.value || additionalNights.value <= 0) return 0;
     const room = extendingBooking.value.room;
     if (!room) return 0;
-    
-    const isPerHead = room.room_type === 'Family Room' || room.room_type === 'Barkadahan Room';
-    const nightlyRate = isPerHead ? (room.price_per_head || 0) : (room.price_per_night || 0);
-    const extraBedRate = Number(room.extra_bed_price ?? 300);
-    const extraGuests = extendingBooking.value.extra_guests || 0;
-    const extraBedCost = extraGuests * extraBedRate * additionalNights.value;
-    
-    const baseCost = isPerHead 
-        ? nightlyRate * (extendingBooking.value.guests || 1) * additionalNights.value 
-        : nightlyRate * additionalNights.value;
 
-    return baseCost + extraBedCost;
+    const isPerHead = room.room_type === 'Family Room' || room.room_type === 'Barkadahan Room';
+    const nightlyRate = isPerHead
+        ? (room.is_promo && Number(room.promo_price_per_head) > 0 ? Number(room.promo_price_per_head) : Number(room.price_per_head || 0))
+        : (room.is_promo && Number(room.promo_price) > 0 ? Number(room.promo_price) : Number(room.price_per_night || 0));
+
+    const adults = Number(extendingBooking.value.adults ?? extendingBooking.value.guests ?? 1);
+    let ages = extendingBooking.value.children_ages || [];
+    if (typeof ages === 'string') {
+        try { ages = JSON.parse(ages) || []; } catch { ages = []; }
+    }
+    const payingChildren = Array.isArray(ages) ? ages.filter(a => Number(a) >= 7).length : 0;
+    const chargeableGuests = Math.max(1, adults + payingChildren);
+
+    // Extra bedding is excluded from stay extension calculations
+    return isPerHead
+        ? nightlyRate * chargeableGuests * additionalNights.value
+        : nightlyRate * additionalNights.value;
 });
 
 const newTotalAmount = computed(() => {
@@ -1042,14 +1083,28 @@ const handleExtendStay = async (booking) => {
 
 const submitExtension = async () => {
     if (!newCheckOut.value || additionalNights.value <= 0) return;
-    
+    if (!publicSettings.value.gcash_number && !publicSettings.value.gcash_qr_url) {
+        await fetchPublicSettings();
+    }
+    showExtendQrModal.value = true;
+};
+
+const submitExtensionWithProof = async (screenshotFile) => {
+    if (!extendingBooking.value || !newCheckOut.value || additionalNights.value <= 0) return;
+
     submittingExtension.value = true;
     try {
         const checkOutWithTime = `${newCheckOut.value}T11:00`;
-        const response = await axios.put(`/api/reservations/${extendingBooking.value.id}`, {
-            check_out: checkOutWithTime
+        const formData = new FormData();
+        formData.append('_method', 'PUT');
+        formData.append('check_out', checkOutWithTime);
+        formData.append('payment_screenshot', screenshotFile);
+
+        const response = await axios.post(`/api/reservations/${extendingBooking.value.id}`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
         });
 
+        showExtendQrModal.value = false;
         showExtendModal.value = false;
 
         await Swal.fire({
@@ -1057,10 +1112,9 @@ const submitExtension = async () => {
             title: 'Stay Extended!',
             html: `
                 <div class="small text-muted">
-                    Your stay in Room #${extendingBooking.value.room?.room_number} has been extended.<br>
+                    Your stay in Room #${extendingBooking.value.room?.room_number} has been extended and your payment screenshot has been sent to staff.<br>
                     New Checkout: <strong>${formatDate(response.data.check_out)}</strong>.<br>
-                    Updated Total Amount: <strong>₱${formatPrice(response.data.total_amount)}</strong>.<br><br>
-                    <span class="text-dark fw-semibold">Please settle the updated amount at the apartelle.</span>
+                    Updated Total Amount: <strong>₱${formatPrice(response.data.total_amount)}</strong>.
                 </div>
             `,
             confirmButtonColor: '#BC9151'
@@ -1068,10 +1122,11 @@ const submitExtension = async () => {
         await fetchBookings();
     } catch (error) {
         console.error('Error extending stay:', error);
+        const firstError = error.response?.data?.payment_screenshot?.[0];
         Swal.fire({
             icon: 'error',
             title: 'Extension Failed',
-            text: error.response?.data?.message || 'Could not extend stay. The room might be booked by another guest for those dates.'
+            text: firstError || error.response?.data?.message || 'Could not extend stay. The room might be booked by another guest for those dates.'
         });
     } finally {
         submittingExtension.value = false;
@@ -1159,16 +1214,45 @@ const handleReschedClickOutside = (e) => {
     }
 };
 
+const reschedQrAmount = computed(() => {
+    if (reschedAdditionalAmount.value > 0) {
+        return reschedAdditionalAmount.value;
+    }
+    return Math.max(Number(rescheduleBooking.value?.total_amount || 0), reschedNewTotalAmount.value);
+});
+
+const fetchPublicSettings = async () => {
+    try {
+        const res = await axios.get('/api/settings/public');
+        publicSettings.value = res.data || {};
+    } catch (error) {
+        console.error('Failed to fetch public settings:', error);
+    }
+};
+
 const confirmReschedule = async () => {
     if (!reschedCheckIn.value || !reschedCheckOut.value || reschedNewNights.value <= 0 || isSameAsOriginalDates.value) return;
+    if (!publicSettings.value.gcash_number && !publicSettings.value.gcash_qr_url) {
+        await fetchPublicSettings();
+    }
+    showReschedQrModal.value = true;
+};
+
+const submitRescheduleWithProof = async (screenshotFile) => {
+    if (!rescheduleBooking.value) return;
 
     submittingReschedule.value = true;
     try {
-        const response = await axios.post(`/api/reservations/${rescheduleBooking.value.id}/reschedule`, {
-            check_in: reschedCheckIn.value,
-            check_out: reschedCheckOut.value
+        const formData = new FormData();
+        formData.append('check_in', reschedCheckIn.value);
+        formData.append('check_out', reschedCheckOut.value);
+        formData.append('payment_screenshot', screenshotFile);
+
+        const response = await axios.post(`/api/reservations/${rescheduleBooking.value.id}/reschedule`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
         });
 
+        showReschedQrModal.value = false;
         showRescheduleModal.value = false;
 
         const updatedTotal = response.data?.reservation?.total_amount ?? rescheduleBooking.value?.total_amount;
@@ -1177,7 +1261,7 @@ const confirmReschedule = async () => {
             title: 'Booking Rescheduled!',
             html: `
                 <div class="small text-muted">
-                    Your booking for Room #${rescheduleBooking.value.room?.room_number} has been updated.<br>
+                    Your booking for Room #${rescheduleBooking.value.room?.room_number} has been updated and your payment screenshot has been sent to staff.<br>
                     New Dates: <strong>${formatDate(reschedCheckIn.value)} &mdash; ${formatDate(reschedCheckOut.value)}</strong> (${reschedNewNights.value} nights).<br>
                     Total Amount: <strong>₱${formatPrice(updatedTotal)}</strong>
                 </div>
@@ -1187,10 +1271,11 @@ const confirmReschedule = async () => {
         await fetchBookings();
     } catch (error) {
         console.error('Error rescheduling booking:', error);
+        const firstError = error.response?.data?.payment_screenshot?.[0];
         Swal.fire({
             icon: 'error',
             title: 'Reschedule Failed',
-            text: error.response?.data?.message || 'Could not reschedule booking. Please select different dates or contact support.'
+            text: firstError || error.response?.data?.message || 'Could not reschedule booking. Please select different dates or contact support.'
         });
     } finally {
         submittingReschedule.value = false;
